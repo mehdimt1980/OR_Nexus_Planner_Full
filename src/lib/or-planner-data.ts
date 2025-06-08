@@ -1,3 +1,4 @@
+
 import type { StaffMember, OperationComplexity, OperationAssignment, ORSchedule } from './or-planner-types';
 import { OPERATING_ROOMS, SHIFTS, type OperatingRoomName, type Shift } from './or-planner-types';
 
@@ -60,8 +61,10 @@ export const INITIAL_SCHEDULE_TEMPLATE = (): ORSchedule => {
           shift,
           procedureName: templateOp.procedureName,
           complexity: templateOp.complexity,
-          status: isCriticalDaVinci ? 'critical_pending' : 'empty', // Will be 'pending_gpt' after AI run
-          notes: isCriticalDaVinci ? "Ulla K. (DaVinci-Expertin) krankgemeldet!" : undefined,
+          assignedStaff: [], // Initialize as empty array
+          gptSuggestedStaff: [], // Initialize as empty array
+          status: isCriticalDaVinci ? 'critical_pending' : 'empty',
+          notes: isCriticalDaVinci ? "Ulla K. (DaVinci-Expertin) krankgemeldet! Benötigt 2 erfahrene Pfleger." : undefined,
         };
       } else {
         schedule[room][shift] = null; // Inactive slot
