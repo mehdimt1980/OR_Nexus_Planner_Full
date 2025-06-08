@@ -1,3 +1,4 @@
+
 "use client";
 import React from 'react';
 import Header from '@/components/or-planner/Header';
@@ -5,17 +6,20 @@ import WorkflowStatusIndicator from '@/components/or-planner/WorkflowStatusIndic
 import DashboardStats from '@/components/or-planner/DashboardStats';
 import OperatingRoomScheduleTable from '@/components/or-planner/OperatingRoomScheduleTable';
 import AiAssistantPanel from '@/components/or-planner/AiAssistantPanel';
+import JuliaRecommendationsPanel from '@/components/or-planner/JuliaRecommendationsPanel';
 import AssignmentModal from '@/components/or-planner/AssignmentModal';
 import { useORData } from '@/hooks/useORData';
 import { STAFF_MEMBERS } from '@/lib/or-planner-data';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Info } from 'lucide-react';
 
 export default function ORNexusPlannerPage() {
   const {
     schedule,
     workflowSteps,
     currentWorkflowStepKey,
-    aiLearningSummary,
+    aiRawLearningSummary,
+    structuredLearningPoints,
     isLoading,
     selectedOperation,
     setSelectedOperation,
@@ -26,11 +30,14 @@ export default function ORNexusPlannerPage() {
     juliaProgress,
     criticalAlertsCount,
     juliaModificationsCount,
+    criticalSituationData,
+    optimizationSuggestionsData,
+    handleExtendStaff,
+    handleRescheduleStaff,
   } = useORData();
 
   const availableStaffForModal = STAFF_MEMBERS.filter(s => !s.isSick);
 
-  // Basic loading state for the whole page if initial data is loading hard
   if (isLoading && currentWorkflowStepKey === 'PLAN_CREATED') {
      return (
         <div className="flex flex-col min-h-screen">
@@ -51,6 +58,7 @@ export default function ORNexusPlannerPage() {
         <WorkflowStatusIndicator steps={workflowSteps} />
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* Left/Main column for Schedule and Stats */}
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             <DashboardStats 
               juliaProgress={juliaProgress}
@@ -62,9 +70,26 @@ export default function ORNexusPlannerPage() {
               onCellClick={(op) => setSelectedOperation(op)} 
             />
           </div>
-          <div className="lg:col-span-1">
+
+          {/* Right column for AI Assistant Panels */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* New Recommendations Section */}
+            <div>
+              <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
+                <Info className="mr-2 h-5 w-5" /> GPT-4 Empfehlungen für Julia
+              </h2>
+              <JuliaRecommendationsPanel
+                criticalSituation={criticalSituationData}
+                optimizationSuggestions={optimizationSuggestionsData}
+                onExtendStaff={handleExtendStaff}
+                onRescheduleStaff={handleRescheduleStaff}
+              />
+            </div>
+
+            {/* Existing AiAssistantPanel - now represents "GPT-4 Lernfortschritt" */}
             <AiAssistantPanel 
-              learningSummary={aiLearningSummary}
+              aiRawLearningSummary={aiRawLearningSummary}
+              structuredLearningPoints={structuredLearningPoints}
               onOptimizeClick={handleGptOptimize}
               onFinalizePlanClick={handleFinalizePlan}
               currentWorkflowStepKey={currentWorkflowStepKey}
