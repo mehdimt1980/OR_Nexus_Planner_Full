@@ -19,7 +19,7 @@ import type { SummarizeGptLearningInput } from '@/ai/flows/summarize-gpt-learnin
 import { useToast } from "@/hooks/use-toast";
 import type { CriticalSituationData, OptimizationSuggestionItem } from '@/components/or-planner/JuliaRecommendationsPanel';
 import type { LearningProgressItem } from '@/components/or-planner/AiAssistantPanel';
-import { AlertTriangle, Lightbulb, CheckCircle, TrendingUp, BarChart2, RefreshCw, Users, Zap, Siren, Brain, Settings2 } from 'lucide-react';
+import { Brain, TrendingUp, Settings2 } from 'lucide-react';
 
 
 const TOTAL_ASSIGNMENTS_FOR_JULIA = 19; // As per requirements
@@ -36,16 +36,16 @@ export function useORData() {
 
   const [criticalSituationData, setCriticalSituationData] = useState<CriticalSituationData>({
     title: "Kritische Situation erkannt",
-    situation: "Saal DaVinci BD2: Ulla K. (Expertin) krank - 2 komplexe DaVinci OPs betroffen",
-    gptSuggestion: "Gerhard K. (DaVinci erfahren) von UCH BD1 zu DaVinci BD2 verlängern",
-    alternative: "Fatima R. (DaVinci-zertifiziert) von ACH BD2 zu DaVinci BD2 umplanen",
+    situation: "Saal DaVinci BD2: Ulla K. (Expertin) krank - 2 komplexe DaVinci OPs betroffen, benötigen je 2 erfahrene Pfleger.",
+    gptSuggestion: "Gerhard K. & Karin R. für DaVinci BD2 einplanen. Gerhard von UCH BD1 verlängern, Karin ist DaVinci-erfahren.",
+    alternative: "Fatima R. & Michael B. für DaVinci BD2. Fatima DaVinci-zertifiziert, Michael als Unterstützung.",
   });
 
   const [optimizationSuggestionsData, setOptimizationSuggestionsData] = useState<OptimizationSuggestionItem[]>([
-    { text: "Saal GCH BD1: Georg H. hat 3 OPs - Arbeitsbelastung prüfen", icon: BarChart2 },
-    { text: "Saal ACH: Gleichmäßige Verteilung der Komplexität über alle Schichten prüfen", icon: RefreshCw },
-    { text: "Reserve: Thomas L. und Sandra P. flexibel für kurzfristige Engpässe einsetzen", icon: Users },
-    { text: "Effizienz: Plan zu 89% optimal - sehr gut!", icon: Zap },
+    { text: "Saal GCH BD1: Georg H. hat 3 OPs - Arbeitsbelastung prüfen", icon: Brain }, // Using Brain as placeholder
+    { text: "Saal ACH: Gleichmäßige Verteilung der Komplexität über alle Schichten prüfen", icon: TrendingUp },
+    { text: "Reserve: Thomas L. und Sandra P. flexibel für kurzfristige Engpässe einsetzen", icon: Settings2 },
+    { text: "Effizienz: Plan zu 89% optimal - sehr gut!", icon: Settings2 }, // Placeholder
   ]);
   
   const [structuredLearningPoints, setStructuredLearningPoints] = useState<LearningProgressItem[]>([
@@ -64,7 +64,7 @@ export function useORData() {
 
 
   const allAssignmentsList = useMemo(() => {
-    return OPERATING_ROOMS.flatMap(room => 
+    return OPERATING_ROOMS.flatMap(room =>
       SHIFTS.map(shift => schedule[room]?.[shift]).filter(Boolean) as OperationAssignment[]
     );
   }, [schedule]);
@@ -91,14 +91,14 @@ export function useORData() {
     if (currentWorkflowStepKey !== 'PLAN_CREATED') return;
 
     setIsLoading(true);
-    setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY'); 
+    setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
     
     const operationsForAI = allAssignmentsList
-      .filter(op => op.status === 'empty' || op.status === 'critical_pending') 
+      .filter(op => op.status === 'empty' || op.status === 'critical_pending')
       .map(op => ({
         name: op.room,
         shift: op.shift,
-        operationComplexity: op.complexity || 'Mittel', 
+        operationComplexity: op.complexity || 'Mittel',
       }));
 
     const input: SuggestStaffingPlanInput = {
@@ -110,14 +110,17 @@ export function useORData() {
     try {
       const suggestions = await fetchAiStaffingSuggestions(input);
       setSchedule(prev => {
-        const newSchedule = JSON.parse(JSON.stringify(prev)); 
+        const newSchedule = JSON.parse(JSON.stringify(prev));
         suggestions.assignments.forEach(sugg => {
           const room = sugg.operatingRoom as OperatingRoomName;
           const shift = sugg.shift as Shift;
           if (newSchedule[room]?.[shift]) {
-            const staffMember = getStaffMemberByName(sugg.staff);
-            newSchedule[room][shift]!.gptSuggestedStaff = staffMember;
-            newSchedule[room][shift]!.assignedStaff = staffMember; 
+            const staffMembers = sugg.staff
+              .map(name => getStaffMemberByName(name))
+              .filter(Boolean) as StaffMember[];
+            
+            newSchedule[room][shift]!.gptSuggestedStaff = staffMembers;
+            newSchedule[room][shift]!.assignedStaff = staffMembers; // Initialize with AI suggestions
             newSchedule[room][shift]!.aiReasoning = sugg.reason;
             if (newSchedule[room][shift]!.status !== 'critical_pending') {
                  newSchedule[room][shift]!.status = 'pending_gpt';
@@ -126,27 +129,26 @@ export function useORData() {
         });
         return newSchedule;
       });
-      toast({ title: "KI Personalvorschläge generiert", description: `${suggestions.assignments.length} Vorschläge warten auf Prüfung.` });
+      toast({ title: "KI Personalvorschläge generiert", description: `${suggestions.assignments.length} Vorschläge (mit je 2 Pflegern) warten auf Prüfung.` });
     } catch (error: any) {
       console.error("Fehler bei KI Vorschlägen:", error);
       toast({ title: "Fehler bei KI Vorschlägen", description: error.message || "Die KI konnte keine Vorschläge generieren.", variant: "destructive" });
-      setCurrentWorkflowStepKey('PLAN_CREATED'); 
+      setCurrentWorkflowStepKey('PLAN_CREATED');
     } finally {
       setIsLoading(false);
     }
   }, [currentWorkflowStepKey, toast, allAssignmentsList]);
 
   useEffect(() => {
-    if (currentWorkflowStepKey === 'PLAN_CREATED' && !isLoading) { // ensure not to run if already loading
+    if (currentWorkflowStepKey === 'PLAN_CREATED' && !isLoading) {
       loadGptSuggestions();
     }
   }, [loadGptSuggestions, currentWorkflowStepKey, isLoading]);
 
 
   const updateLearningSummary = useCallback(async (currentOverrides: JuliaOverride[]) => {
-    if (currentOverrides.length === 0 && juliaOverrides.length === 0) { // check combined length
+    if (currentOverrides.length === 0 && juliaOverrides.length === 0) {
       setAiRawLearningSummary("Noch keine Anpassungen durch Julia erfolgt. KI wartet auf Feedback.");
-      // Update structured points to reflect no overrides
       setStructuredLearningPoints([
         { text: "Die KI wartet auf Julias erste Anpassungen, um den Lernprozess zu starten.", icon: Brain },
         { text: "Verbesserungen werden nach Julias Feedback sichtbar.", icon: TrendingUp },
@@ -156,19 +158,19 @@ export function useORData() {
     }
     setIsLoading(true);
     const input: SummarizeGptLearningInput = {
-      juliaOverrides: currentOverrides.map(o => `${o.operationId}: ${o.originalSuggestion} -> ${o.juliaSelection} (${o.reason})`),
+      // Adjusting input for SummarizeGptLearningInput:
+      // Flatten the array of staff names for the string description
+      juliaOverrides: currentOverrides.map(o => `${o.operationId}: [${o.originalSuggestion.join(', ')}] -> [${o.juliaSelection.join(', ')}] (${o.reason})`),
       numOverrides: currentOverrides.length,
       totalAssignments: TOTAL_ASSIGNMENTS_FOR_JULIA
     };
     try {
       const summary = await fetchAiLearningSummary(input);
       setAiRawLearningSummary(summary.summary);
-      // Here you might parse summary.summary or use other data to update structuredLearningPoints
-      // For now, we'll keep the example ones but ideally they are derived
       setStructuredLearningPoints([
         { text: `Gelernt: ${summary.summary.split('.')[0] || "Analysiere Julias Präferenzen..."}`, icon: Brain },
         { text: `Verbesserung: Aktivitätsbasiertes Lernen fortlaufend.`, icon: TrendingUp },
-        { text: "Nächste Optimierung: Verfeinerung der Komplexitätsbewertung.", icon: Settings2 },
+        { text: "Nächste Optimierung: Verfeinerung der Komplexitätsbewertung für Personalpaare.", icon: Settings2 },
       ]);
       toast({ title: "KI Lernfortschritt aktualisiert", description: "Die KI hat aus den letzten Änderungen gelernt." });
     } catch (error) {
@@ -177,10 +179,9 @@ export function useORData() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, juliaOverrides.length]); // Depend on juliaOverrides.length to re-evaluate initial message
+  }, [toast, juliaOverrides.length]);
 
   useEffect(() => {
-    // Initial call to set the correct learning summary if no overrides yet
     if (juliaOverrides.length === 0 && currentWorkflowStepKey !== 'PLAN_CREATED') {
         updateLearningSummary([]);
     }
@@ -191,8 +192,13 @@ export function useORData() {
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       const [room, shift] = operationId.split('-') as [OperatingRoomName, Shift];
-      if (newSchedule[room]?.[shift] && (newSchedule[room][shift]!.status === 'pending_gpt' || newSchedule[room][shift]!.status === 'critical_pending' || newSchedule[room][shift]!.status === 'modified_julia')) {
-        newSchedule[room][shift]!.status = 'approved_julia';
+      const op = newSchedule[room]?.[shift];
+      if (op && (op.status === 'pending_gpt' || op.status === 'critical_pending' || op.status === 'modified_julia')) {
+        op.status = 'approved_julia';
+        // Ensure assignedStaff reflects the (potentially dual) gptSuggestedStaff if approved
+        if (op.gptSuggestedStaff && op.gptSuggestedStaff.length > 0) {
+          op.assignedStaff = op.gptSuggestedStaff;
+        }
         toast({ title: "Vorschlag genehmigt", description: `Einsatz für ${room} - ${shift} wurde von Julia genehmigt.`});
       }
       return newSchedule;
@@ -200,23 +206,24 @@ export function useORData() {
     setSelectedOperation(null);
   };
 
-  const handleModify = (operationId: string, newStaffId: string, reason: string) => {
+  const handleModify = (operationId: string, newStaffIds: string[], reason: string) => {
     let modifiedOverride: JuliaOverride | null = null;
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       const [room, shift] = operationId.split('-') as [OperatingRoomName, Shift];
       const op = newSchedule[room]?.[shift];
       if (op) {
-        const newStaffMember = getStaffMemberById(newStaffId);
-        const originalStaffName = op.gptSuggestedStaff?.name || op.assignedStaff?.name || "N/A"; // Better fallback for original
-        op.assignedStaff = newStaffMember;
+        const newStaffMembers = newStaffIds.map(id => getStaffMemberById(id)).filter(Boolean) as StaffMember[];
+        const originalStaffNames = (op.gptSuggestedStaff && op.gptSuggestedStaff.length > 0 ? op.gptSuggestedStaff.map(s => s.name) : op.assignedStaff.map(s => s.name)) || ["N/A"];
+        
+        op.assignedStaff = newStaffMembers;
         op.status = 'modified_julia';
         op.juliaModificationReason = reason;
         
         modifiedOverride = {
           operationId,
-          originalSuggestion: originalStaffName,
-          juliaSelection: newStaffMember?.name || "N/A",
+          originalSuggestion: originalStaffNames,
+          juliaSelection: newStaffMembers.map(s => s.name),
           reason,
         };
         toast({ title: "Vorschlag geändert", description: `Einsatz für ${room} - ${shift} wurde von Julia angepasst. KI lernt...`});
@@ -250,8 +257,12 @@ export function useORData() {
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       allAssignmentsList.forEach(op => {
-        if (op.status === 'pending_gpt' || op.status === 'critical_pending') {
-          newSchedule[op.room][op.shift]!.status = 'approved_julia';
+         const assignment = newSchedule[op.room]?.[op.shift];
+        if (assignment && (assignment.status === 'pending_gpt' || assignment.status === 'critical_pending')) {
+          assignment.status = 'approved_julia';
+          if (assignment.gptSuggestedStaff && assignment.gptSuggestedStaff.length > 0) {
+            assignment.assignedStaff = assignment.gptSuggestedStaff;
+          }
         }
       });
       return newSchedule;
@@ -263,7 +274,7 @@ export function useORData() {
     // @ts-ignore
     window.demoApproveAll = approveAllByDemo;
     return () => { // @ts-ignore
-        window.demoApproveAll = undefined; 
+        window.demoApproveAll = undefined;
     };
   }, [approveAllByDemo]);
 
@@ -277,8 +288,12 @@ export function useORData() {
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       allAssignmentsList.forEach(op => {
-        if (op.status === 'pending_gpt' || op.status === 'critical_pending') {
-          newSchedule[op.room][op.shift]!.status = 'approved_julia';
+        const assignment = newSchedule[op.room]?.[op.shift];
+        if (assignment && (assignment.status === 'pending_gpt' || assignment.status === 'critical_pending')) {
+          assignment.status = 'approved_julia';
+           if (assignment.gptSuggestedStaff && assignment.gptSuggestedStaff.length > 0) {
+            assignment.assignedStaff = assignment.gptSuggestedStaff;
+          }
           approvedCount++;
         }
       });
@@ -299,7 +314,7 @@ export function useORData() {
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       allAssignmentsList.forEach(op => {
-        if (op.status === 'approved_julia' || op.status === 'modified_julia') {
+        if (newSchedule[op.room]?.[op.shift] && (newSchedule[op.room][op.shift]!.status === 'approved_julia' || newSchedule[op.room][op.shift]!.status === 'modified_julia')) {
           newSchedule[op.room][op.shift]!.status = 'final_approved';
         }
       });
@@ -324,9 +339,9 @@ export function useORData() {
     handleModify,
     handleGptOptimize,
     handleFinalizePlan,
-    loadGptSuggestions, 
+    loadGptSuggestions,
     juliaProgress: { reviewed: juliaReviewedCount, total: TOTAL_ASSIGNMENTS_FOR_JULIA },
-    criticalAlertsCount: allAssignmentsList.filter(op => op.status === 'critical_pending' || (op.room === 'DaVinci' && op.shift === 'BD2' && op.assignedStaff?.name !== 'Karin R.')).length, 
+    criticalAlertsCount: allAssignmentsList.filter(op => op.status === 'critical_pending' || (op.room === 'DaVinci' && op.shift === 'BD2' && op.assignedStaff.length < 2)).length,
     juliaModificationsCount: juliaOverrides.length,
     criticalSituationData,
     optimizationSuggestionsData,
