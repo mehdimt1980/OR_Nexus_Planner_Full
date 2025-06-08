@@ -1,10 +1,11 @@
+
 "use client";
 import React from 'react';
-import type { OperationAssignment, OperationComplexity } from '@/lib/or-planner-types';
+import type { OperationAssignment, OperationComplexity, StaffMember } from '@/lib/or-planner-types';
 import { SHIFT_TIMES } from '@/lib/or-planner-types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { User, AlertCircle, Check, Edit3, Bot } from 'lucide-react'; // Bot for AI suggestion
+import { User, AlertCircle, Check, Edit3, Bot, Users } from 'lucide-react';
 
 type AssignmentCellProps = {
   operation: OperationAssignment | null;
@@ -35,6 +36,7 @@ const AssignmentCell: React.FC<AssignmentCellProps> = ({ operation, onClick }) =
 
   const config = statusConfig[operation.status] || statusConfig.empty;
   const Icon = config.icon;
+  const assignedStaff = operation.assignedStaff || [];
 
   return (
     <div
@@ -63,16 +65,18 @@ const AssignmentCell: React.FC<AssignmentCellProps> = ({ operation, onClick }) =
         </div>
         <p className="font-semibold text-sm truncate text-foreground/90" title={operation.procedureName}>{operation.procedureName || 'N/A'}</p>
       </div>
-      
+
       <div className="mt-1">
-        {operation.assignedStaff ? (
-          <div className="flex items-center space-x-1.5 text-foreground/80">
-            <User className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate" title={operation.assignedStaff.name}>{operation.assignedStaff.name}</span>
-          </div>
+        {assignedStaff.length > 0 ? (
+          assignedStaff.map((staff, index) => (
+            <div key={staff.id || index} className="flex items-center space-x-1.5 text-foreground/80 truncate" title={staff.name}>
+              <User className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{staff.name}</span>
+            </div>
+          ))
         ) : (
           <div className="flex items-center space-x-1.5 text-muted-foreground italic">
-             <User className="h-3.5 w-3.5 shrink-0" />
+             <Users className="h-3.5 w-3.5 shrink-0" /> {/* Users icon for multiple staff */}
             <span>Unbesetzt</span>
           </div>
         )}
