@@ -1,3 +1,4 @@
+
 export type StaffMember = {
   id: string;
   name: string;
@@ -26,12 +27,12 @@ export type OperationAssignment = {
   id: string; // Unique ID, e.g., `${room}-${shift}`
   room: OperatingRoomName;
   shift: Shift;
-  procedureName?: string; 
+  procedureName?: string;
   complexity?: OperationComplexity;
-  assignedStaff?: StaffMember;
-  gptSuggestedStaff?: StaffMember;
+  assignedStaff: StaffMember[]; // Changed to array
+  gptSuggestedStaff?: StaffMember[]; // Changed to array
   status: AssignmentStatus;
-  notes?: string; 
+  notes?: string;
   aiReasoning?: string;
   juliaModificationReason?: string;
 };
@@ -61,7 +62,7 @@ export const ALL_WORKFLOW_STEPS: WorkflowStep[] = [
 
 export interface JuliaOverride {
   operationId: string;
-  originalSuggestion: string; // staff name
-  juliaSelection: string; // staff name
+  originalSuggestion: string[]; // staff names array
+  juliaSelection: string[]; // staff names array
   reason: string;
 }
