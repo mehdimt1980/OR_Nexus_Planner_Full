@@ -58,48 +58,46 @@ The Nexus OR Planner is an AI-powered Operating Room (OR) scheduling and staff a
 
 ## 3. Project Structure
 
-.
-├── .env                     # Local environment variables (e.g., API keys) - NOT COMMITTED
-├── README.md                # Project description and setup guide
-├── apphosting.yaml          # Firebase App Hosting configuration
-├── components.json          # ShadCN UI configuration
-├── next.config.ts           # Next.js configuration
-├── package.json             # Project dependencies and scripts
-├── postcss.config.js        # PostCSS configuration (for Tailwind)
-├── tailwind.config.ts       # Tailwind CSS configuration
-├── tsconfig.json            # TypeScript configuration
+├── .env # Local environment variables (e.g., API keys) - NOT COMMITTED
+├── README.md # Project description and setup guide
+├── apphosting.yaml # Firebase App Hosting configuration
+├── components.json # ShadCN UI configuration
+├── next.config.ts # Next.js configuration
+├── package.json # Project dependencies and scripts
+├── postcss.config.js # PostCSS configuration (for Tailwind)
+├── tailwind.config.ts # Tailwind CSS configuration
+├── tsconfig.json # TypeScript configuration
 └── src
-    ├── ai                   # Genkit AI integration
-    │   ├── dev.ts           # Genkit development server setup
-    │   ├── genkit.ts        # Genkit core initialization and model configuration
-    │   └── flows            # AI flows (e.g., staffing suggestions, learning summary)
-    │       ├── suggest-staffing-plan.ts
-    │       └── summarize-gpt-learning.ts
-    ├── app                  # Next.js App Router core files
-    │   ├── globals.css      # Global styles and Tailwind/ShadCN theme variables
-    │   ├── layout.tsx       # Root layout component
-    │   └── page.tsx         # Main page component for the OR planner
-    ├── components           # Reusable React components
-    │   ├── or-planner       # Components specific to the OR planner application
-    │   │   ├── AiAssistantPanel.tsx
-    │   │   ├── AssignmentCell.tsx
-    │   │   ├── AssignmentModal.tsx
-    │   │   ├── DashboardStats.tsx
-    │   │   ├── Header.tsx
-    │   │   ├── JuliaRecommendationsPanel.tsx
-    │   │   ├── OperatingRoomScheduleTable.tsx
-    │   │   └── WorkflowStatusIndicator.tsx
-    │   └── ui               # ShadCN UI components (e.g., Button, Card, Dialog)
-    ├── hooks                # Custom React hooks
-    │   ├── use-mobile.tsx   # Hook to detect mobile viewport
-    │   ├── use-toast.ts     # Hook for managing toast notifications
-    │   └── useORData.ts     # Central hook for OR planner logic and state
-    └── lib                  # Utility functions, data, types, and server actions
-        ├── actions.ts       # Next.js Server Actions for AI flow calls
-        ├── or-planner-data.ts # Initial data, staff list, schedule template
-        ├── or-planner-types.ts# TypeScript type definitions for the OR planner
-        └── utils.ts         # General utility functions (e.g., `cn` for classnames)
----
+├── ai # Genkit AI integration
+│ ├── dev.ts # Genkit development server setup
+│ ├── genkit.ts # Genkit core initialization and model configuration
+│ └── flows # AI flows (e.g., staffing suggestions, learning summary)
+│ ├── suggest-staffing-plan.ts
+│ └── summarize-gpt-learning.ts
+├── app # Next.js App Router core files
+│ ├── globals.css # Global styles and Tailwind/ShadCN theme variables
+│ ├── layout.tsx # Root layout component
+│ └── page.tsx # Main page component for the OR planner
+├── components # Reusable React components
+│ ├── or-planner # Components specific to the OR planner application
+│ │ ├── AiAssistantPanel.tsx
+│ │ ├── AssignmentCell.tsx
+│ │ ├── AssignmentModal.tsx
+│ │ ├── DashboardStats.tsx
+│ │ ├── Header.tsx
+│ │ ├── JuliaRecommendationsPanel.tsx
+│ │ ├── OperatingRoomScheduleTable.tsx
+│ │ └── WorkflowStatusIndicator.tsx
+│ └── ui # ShadCN UI components (e.g., Button, Card, Dialog)
+├── hooks # Custom React hooks
+│ ├── use-mobile.tsx # Hook to detect mobile viewport
+│ ├── use-toast.ts # Hook for managing toast notifications
+│ └── useORData.ts # Central hook for OR planner logic and state
+└── lib # Utility functions, data, types, and server actions
+├── actions.ts # Next.js Server Actions for AI flow calls
+├── or-planner-data.ts # Initial data, staff list, schedule template
+├── or-planner-types.ts# TypeScript type definitions for the OR planner
+└── utils.ts # General utility functions (e.g., cn for classnames)
 
 ## 4. Core Components and Logic
 
