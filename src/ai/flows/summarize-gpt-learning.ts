@@ -1,9 +1,11 @@
+
 // Summarize what GPT has learned from Julia's manual overrides of staff assignments.
 
 'use server';
 
 /**
- * @fileOverview This flow summarizes what the AI has learned from Julia's manual adjustments.
+ * @fileOverview This flow summarizes what the AI has learned from Julia's manual adjustments,
+ * considering that assignments involve pairs of staff.
  *
  * - summarizeGptLearning - A function that summarizes the GPT learning process.
  * - SummarizeGptLearningInput - The input type for the summarizeGptLearning function.
@@ -17,10 +19,10 @@ const SummarizeGptLearningInputSchema = z.object({
   juliaOverrides: z
     .array(z.string())
     .describe(
-      'A list of descriptions of Julia\u2019s overrides of the AI staffing suggestions, explaining the reason for the override.'
+      'A list of descriptions of Julia’s overrides of the AI staffing suggestions. Each description should detail the change from original staff pair to Julia\'s selected staff pair and the reason. Format: "OperationID: [Original Staff1, Original Staff2] -> [Julia Staff1, Julia Staff2] (Reason for change)"'
     ),
   numOverrides: z.number().describe('The number of manual overrides Julia made to the AI suggestions.'),
-  totalAssignments: z.number().describe('The total number of staff assignments made.'),
+  totalAssignments: z.number().describe('The total number of staff assignments made (each assignment slot counts as one).'),
 });
 export type SummarizeGptLearningInput = z.infer<typeof SummarizeGptLearningInputSchema>;
 
@@ -28,7 +30,7 @@ const SummarizeGptLearningOutputSchema = z.object({
   summary: z
     .string()
     .describe(
-      'A concise summary of the patterns and reasons for Julia\u2019s overrides, highlighting what the AI has learned and potential areas for improvement.'
+      'A concise summary of the patterns and reasons for Julia’s overrides, highlighting what the AI has learned and potential areas for improvement for staff pairings.'
     ),
 });
 export type SummarizeGptLearningOutput = z.infer<typeof SummarizeGptLearningOutputSchema>;
@@ -41,18 +43,21 @@ const summarizeGptLearningPrompt = ai.definePrompt({
   name: 'summarizeGptLearningPrompt',
   input: {schema: SummarizeGptLearningInputSchema},
   output: {schema: SummarizeGptLearningOutputSchema},
-  prompt: `You are an AI learning summarization expert for operating room scheduling.
+  prompt: `You are an AI learning summarization expert for operating room scheduling. You are helping to optimize the assignment of pairs of care staff (Pfleges) to operating rooms.
 
-  You are provided with a list of manual overrides that Julia, the head nurse, made to your AI staffing suggestions, along with the total number of assignments and overrides.
+  You are provided with a list of manual overrides that Julia, the head nurse, made to your AI staffing pair suggestions, along with the total number of assignment slots and overrides.
 
-  Your goal is to identify patterns and reasons for these overrides and provide a concise summary of what the AI has learned and where improvements can be made.
+  Your goal is to identify patterns and reasons for these overrides (especially concerning staff pairings) and provide a concise summary of what the AI has learned and where improvements can be made in suggesting staff pairs.
 
   Here's the information about Julia's overrides:
   Number of Overrides: {{{numOverrides}}}
-  Total Assignments: {{{totalAssignments}}}
-  Overrides Descriptions: {{#each juliaOverrides}}- {{{this}}}{{#unless @last}}\n{{/unless}}{{/each}}
+  Total Assignment Slots: {{{totalAssignments}}}
+  Overrides Descriptions (Original Pair -> Julia's Pair (Reason)):
+  {{#each juliaOverrides}}
+  - {{{this}}}
+  {{/unless}}
 
-  Based on this information, summarize the key learnings and potential areas for improvement in a way that Torsten, the OR Manager, can easily understand. Focus on actionable insights.
+  Based on this information, summarize the key learnings and potential areas for improvement in suggesting staff PAIRS, in a way that Torsten, the OR Manager, can easily understand. Focus on actionable insights regarding how to better suggest compatible and effective staff pairs.
   `,
 });
 
