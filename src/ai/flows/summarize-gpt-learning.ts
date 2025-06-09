@@ -52,10 +52,14 @@ const summarizeGptLearningPrompt = ai.definePrompt({
   Here's the information about Julia's overrides:
   Number of Overrides: {{{numOverrides}}}
   Total Assignment Slots: {{{totalAssignments}}}
+  {{#if juliaOverrides}}
   Overrides Descriptions (Original Pair -> Julia's Pair (Reason)):
   {{#each juliaOverrides}}
   - {{{this}}}
-  {{/unless}}
+  {{/each}}
+  {{else}}
+  (No specific override details from Julia were provided for this learning cycle.)
+  {{/if}}
 
   Based on this information, summarize the key learnings and potential areas for improvement in suggesting staff PAIRS, in a way that Torsten, the OR Manager, can easily understand. Focus on actionable insights regarding how to better suggest compatible and effective staff pairs.
   `,
@@ -68,7 +72,12 @@ const summarizeGptLearningFlow = ai.defineFlow(
     outputSchema: SummarizeGptLearningOutputSchema,
   },
   async input => {
-    const {output} = await summarizeGptLearningPrompt(input);
-    return output!;
+    const {output, usage} = await summarizeGptLearningPrompt(input);
+     if (!output) {
+      console.error('SummarizeGptLearningFlow: AI prompt did not return a parsable output.', { usageInfo: usage, inputData: input });
+      throw new Error('AI prompt for learning summary did not return a parsable output. This could be due to safety filters, model issues, or an invalid response format from the AI.');
+    }
+    return output;
   }
 );
+
