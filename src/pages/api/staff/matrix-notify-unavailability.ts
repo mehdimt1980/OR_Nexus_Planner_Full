@@ -1,70 +1,110 @@
 // src/pages/api/staff/matrix-notify-unavailability.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-type Data = {
+type ExpectedRequestBody = {
+  staffMatrixId: string; // e.g., "@julia.woogk:yourhospital.org"
+  isUnavailable: boolean;
+  originalMessage?: string; // The original message from Matrix for logging
+  // You might also include a timestamp from the bot, or a unique event ID
+};
+
+type ResponseData = {
   message: string;
-  staffId?: string;
+  internalStaffId?: string; // The ID used within the Nexus OR Planner
   error?: string;
+};
+
+// This is a placeholder. In a real system, you'd have a database.
+const MOCK_STAFF_MATRIX_ID_TO_INTERNAL_ID_MAP: Record<string, string> = {
+  '@julia.woogk:yourhospital.org': 'staff_user_julia', // Example mapping
+  '@gerhard.k:yourhospital.org': 'staff_3', // Example mapping to existing staff ID
+  // ... add mappings for all relevant staff
 };
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<Data>
+  res: NextApiResponse<ResponseData>
 ) {
   if (req.method === 'POST') {
-    const { staffId, isUnavailable, matrixUserId, originalMessage } = req.body;
+    // 1. AUTHENTICATION: Secure this endpoint!
+    // Your Matrix bot should send a secret API key in the headers.
+    const apiKey = req.headers['x-matrix-bot-auth'];
+    if (apiKey !== process.env.MATRIX_BOT_API_KEY) {
+      console.warn('Unauthorized attempt to call matrix-notify-unavailability API route.');
+      return res.status(401).json({ message: 'Unauthorized: Invalid or missing API key.' });
+    }
 
-    // 1. AUTHENTICATION/AUTHORIZATION:
-    // In a real system, you MUST secure this endpoint.
-    // This could be via a secret API key/token that your Matrix bot sends,
-    // matching a value stored in your environment variables.
-    // Example:
-    // const apiKey = req.headers['x-matrix-bot-auth'];
-    // if (apiKey !== process.env.MATRIX_BOT_API_KEY) {
-    //   console.warn('Unauthorized attempt to call matrix-notify-unavailability');
-    //   return res.status(401).json({ message: 'Unauthorized' });
-    // }
+    const { staffMatrixId, isUnavailable, originalMessage } = req.body as ExpectedRequestBody;
 
-    if (!staffId || typeof isUnavailable !== 'boolean') {
-      return res.status(400).json({ message: 'Missing staffId or isUnavailable flag in request body' });
+    // 2. VALIDATION:
+    if (!staffMatrixId || typeof isUnavailable !== 'boolean') {
+      return res.status(400).json({ 
+        message: 'Bad Request: Missing staffMatrixId or isUnavailable flag in request body, or isUnavailable is not a boolean.' 
+      });
     }
 
     console.log(
-      `Received unavailability notification via Matrix. Staff ID: ${staffId}, Matrix User: ${matrixUserId || 'N/A'}, Unavailable: ${isUnavailable}. Original Message: "${originalMessage || 'N/A'}"`
+      `[Matrix Integration API] Received unavailability notification. Staff Matrix ID: ${staffMatrixId}, Unavailable: ${isUnavailable}. Original Message: "${originalMessage || 'N/A'}"`
     );
 
-    // 2. UPDATE PERSISTENT STORAGE (DATABASE):
-    // In a real application, you would now update the staff member's status
-    // in your backend database (e.g., PostgreSQL, MongoDB, Azure Cosmos DB).
-    // This database would be the single source of truth for staff availability.
+    // 3. MAP MATRIX ID TO INTERNAL STAFF ID:
+    // In a real system, this mapping might come from a database linking Matrix users to your application's staff records.
+    const internalStaffId = MOCK_STAFF_MATRIX_ID_TO_INTERNAL_ID_MAP[staffMatrixId.toLowerCase()];
+
+    if (!internalStaffId) {
+      console.warn(`[Matrix Integration API] Could not map Matrix ID "${staffMatrixId}" to an internal staff ID.`);
+      // Depending on your policy, you might still acknowledge the message to Matrix but log an error internally.
+      return res.status(404).json({ 
+        message: `Staff member with Matrix ID "${staffMatrixId}" not found or not mapped in the planner system.`,
+        error: 'Staff mapping not found' 
+      });
+    }
+
+    // 4. UPDATE PERSISTENT STORAGE (DATABASE):
+    // THIS IS WHERE YOU WOULD INTERACT WITH YOUR REAL BACKEND DATABASE.
+    // The database would be the single source of truth for staff availability.
     //
-    // Example (pseudo-code):
+    // Example (pseudo-code for database interaction):
     // try {
-    //   // Potentially map matrixUserId to internal staffId if needed
-    //   await db.collection('staff').updateOne(
-    //     { id: staffId },
-    //     { $set: { isSick: isUnavailable, lastReportedVia: 'Matrix', lastReportedTime: new Date(), lastMatrixMessage: originalMessage } }
+    //   await db.collection('staff_availability').updateOne(
+    //     { internalStaffId: internalStaffId }, // or staffMembersCollection.updateOne({ id: internalStaffId } ...
+    //     { $set: { 
+    //         isSick: isUnavailable, 
+    //         lastReportedVia: 'Matrix', 
+    //         lastReportedTime: new Date(), 
+    //         lastMatrixMessage: originalMessage || null 
+    //       } 
+    //     },
+    //     { upsert: true } // Create if not exists, or update existing
     //   );
+    //   console.log(`[Matrix Integration API] Successfully updated availability for ${internalStaffId} (${staffMatrixId}) to ${isUnavailable} in the database.`);
     // } catch (dbError: any) {
-    //   console.error('Database update failed:', dbError);
-    //   return res.status(500).json({ message: 'Failed to update staff status in database', error: dbError.message });
+    //   console.error('[Matrix Integration API] Database update failed:', dbError);
+    //   // Return an error to the Matrix bot so it knows the operation failed and can potentially retry or notify an admin.
+    //   return res.status(500).json({ 
+    //     message: 'Failed to update staff status in the planner database.', 
+    //     internalStaffId,
+    //     error: dbError.message 
+    //   });
     // }
 
-    // 3. NOTIFYING THE FRONTEND (Client-side useORData hook):
+    // 5. NOTIFYING THE FRONTEND (Client-side useORData hook):
     // This API route *cannot* directly update the React state in useORData.ts.
     // The frontend (useORData.ts) would need to:
-    //    a) Periodically fetch the latest staff/schedule data from an API that reads from the database.
-    //    b) Or, use a real-time mechanism like WebSockets to be notified by the backend
-    //       when data in the database changes.
+    //    a) Periodically fetch the latest staff/schedule data from an API that reads from your database.
+    //    b) Or, use a real-time mechanism like WebSockets (e.g., Socket.IO, Ably, Pusher) 
+    //       to be notified by your backend when data in the database changes.
     //
-    // The logic similar to `reportStaffUnavailable` in `useORData.ts` (which updates local React state
-    // and triggers AI re-planning based on that local state) would run on the client-side *after*
-    // it receives the updated data from the backend (from the database).
+    // For now, the `reportStaffUnavailable` function in `useORData.ts` (when triggered by the UI panel)
+    // simulates the client-side reaction to such a change.
 
-    // For this placeholder, we just acknowledge receipt.
-    // In a real scenario, after successful DB update, you'd inform the client
-    // (perhaps through a websocket or by the client polling).
-    res.status(200).json({ message: 'Unavailability notification from Matrix processed conceptually.', staffId });
+    // 6. RESPOND TO THE MATRIX BOT:
+    // Let the Matrix bot know the request was received and (conceptually) processed.
+    res.status(200).json({ 
+      message: 'Unavailability notification from Matrix processed by planner API.', 
+      internalStaffId 
+    });
+
   } else {
     res.setHeader('Allow', ['POST']);
     res.status(405).end(`Method ${req.method} Not Allowed`);
