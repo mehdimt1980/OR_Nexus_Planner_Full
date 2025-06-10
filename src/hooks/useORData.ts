@@ -12,7 +12,7 @@ import type {
   Shift,
 } from '@/lib/or-planner-types';
 import { ALL_WORKFLOW_STEPS, SHIFTS, OPERATING_ROOMS } from '@/lib/or-planner-types';
-import { INITIAL_SCHEDULE_TEMPLATE, STAFF_MEMBERS, AVAILABLE_STAFF_FOR_AI, SICK_STAFF_FOR_AI, getStaffMemberByName, getStaffMemberById } from '@/lib/or-planner-data';
+import { INITIAL_SCHEDULE_TEMPLATE, STAFF_MEMBERS as INITIAL_STAFF_MEMBERS, getStaffMemberByName, getStaffMemberById } from '@/lib/or-planner-data';
 import { fetchAiStaffingSuggestions, fetchAiLearningSummary } from '@/lib/actions';
 import type { SuggestStaffingPlanInput } from '@/ai/flows/suggest-staffing-plan';
 import type { SummarizeGptLearningInput } from '@/ai/flows/summarize-gpt-learning';
@@ -26,8 +26,9 @@ const TOTAL_ASSIGNMENTS_FOR_JULIA = 19; // As per requirements
 
 export function useORData() {
   const [schedule, setSchedule] = useState<ORSchedule>(INITIAL_SCHEDULE_TEMPLATE());
-  const [staff, setStaff] = useState<StaffMember[]>(STAFF_MEMBERS);
+  const [staff, setStaff] = useState<StaffMember[]>(() => JSON.parse(JSON.stringify(INITIAL_STAFF_MEMBERS))); // Deep copy for mutable state
   const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState<WorkflowStepKey>('PLAN_CREATED');
+  const [previousWorkflowStepKey, setPreviousWorkflowStepKey] = useState<WorkflowStepKey | null>(null);
   const [aiRawLearningSummary, setAiRawLearningSummary] = useState<string>("KI lernt aus Julias Anpassungen...");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedOperation, setSelectedOperation] = useState<OperationAssignment | null>(null);
@@ -42,10 +43,10 @@ export function useORData() {
   });
 
   const [optimizationSuggestionsData, setOptimizationSuggestionsData] = useState<OptimizationSuggestionItem[]>([
-    { text: "Saal GCH BD1: Georg H. hat 3 OPs - Arbeitsbelastung prüfen", icon: Brain }, // Using Brain as placeholder
+    { text: "Saal GCH BD1: Georg H. hat 3 OPs - Arbeitsbelastung prüfen", icon: Brain },
     { text: "Saal ACH: Gleichmäßige Verteilung der Komplexität über alle Schichten prüfen", icon: TrendingUp },
     { text: "Reserve: Thomas L. und Sandra P. flexibel für kurzfristige Engpässe einsetzen", icon: Settings2 },
-    { text: "Effizienz: Plan zu 89% optimal - sehr gut!", icon: Settings2 }, // Placeholder
+    { text: "Effizienz: Plan zu 89% optimal - sehr gut!", icon: Settings2 },
   ]);
   
   const [structuredLearningPoints, setStructuredLearningPoints] = useState<LearningProgressItem[]>([
@@ -74,24 +75,31 @@ export function useORData() {
   const getWorkflowSteps = (): WorkflowStep[] => {
     return ALL_WORKFLOW_STEPS.map(step => {
       let status: 'completed' | 'active' | 'pending' = 'pending';
-      if (step.key === currentWorkflowStepKey) {
-        status = 'active';
-      } else {
-        const stepIndex = ALL_WORKFLOW_STEPS.findIndex(s => s.key === step.key);
-        const currentIndex = ALL_WORKFLOW_STEPS.findIndex(s => s.key === currentWorkflowStepKey);
-        if (stepIndex < currentIndex) {
+      const currentStepInfo = ALL_WORKFLOW_STEPS.find(s => s.key === currentWorkflowStepKey);
+      const stepInfo = ALL_WORKFLOW_STEPS.find(s => s.key === step.key);
+
+      if (currentStepInfo && stepInfo) {
+        if (stepInfo.order < currentStepInfo.order) {
           status = 'completed';
+        } else if (stepInfo.order === currentStepInfo.order) {
+          status = 'active';
         }
       }
-      return { ...step, status };
+      return { ...step, label: step.label, status }; // Ensure label is passed
     });
   };
   
   const loadGptSuggestions = useCallback(async () => {
-    if (currentWorkflowStepKey !== 'PLAN_CREATED') return;
+    // Prevent re-triggering if already loading or not in the right step for initial load
+    if (isLoading && currentWorkflowStepKey === 'GPT_SUGGESTIONS_READY') return;
+    // Allow re-triggering if called by reportStaffUnavailable, even if step is not PLAN_CREATED
 
     setIsLoading(true);
-    setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
+    // Don't always reset to GPT_SUGGESTIONS_READY if re-planning
+    if (currentWorkflowStepKey === 'PLAN_CREATED') {
+      setPreviousWorkflowStepKey(currentWorkflowStepKey);
+      setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
+    }
     
     const operationsForAI = allAssignmentsList
       .filter(op => op.status === 'empty' || op.status === 'critical_pending')
@@ -101,10 +109,19 @@ export function useORData() {
         operationComplexity: op.complexity || 'Mittel',
       }));
 
+    if (operationsForAI.length === 0 && currentWorkflowStepKey !== 'PLAN_CREATED') {
+       toast({ title: "Keine Operationen für KI-Planung", description: "Alle Slots sind bereits zugewiesen oder nicht für KI-Planung markiert." });
+       setIsLoading(false);
+       return;
+    }
+    
+    const dynamicAvailableStaff = staff.filter(s => !s.isSick).map(s => s.name);
+    const dynamicSickStaff = staff.filter(s => s.isSick).map(s => s.name);
+
     const input: SuggestStaffingPlanInput = {
       operatingRooms: operationsForAI,
-      availableStaff: AVAILABLE_STAFF_FOR_AI,
-      sickStaff: SICK_STAFF_FOR_AI,
+      availableStaff: dynamicAvailableStaff,
+      sickStaff: dynamicSickStaff,
     };
 
     try {
@@ -114,30 +131,40 @@ export function useORData() {
         suggestions.assignments.forEach(sugg => {
           const room = sugg.operatingRoom as OperatingRoomName;
           const shift = sugg.shift as Shift;
-          if (newSchedule[room]?.[shift]) {
+          const targetOp = newSchedule[room]?.[shift];
+          if (targetOp) {
             const staffMembers = sugg.staff
-              .map(name => getStaffMemberByName(name))
+              .map(name => {
+                const staffMember = staff.find(s => s.name === name); // Use current staff state
+                return staffMember ? { id: staffMember.id, name: staffMember.name, skills: staffMember.skills } : null;
+              })
               .filter(Boolean) as StaffMember[];
             
-            newSchedule[room][shift]!.gptSuggestedStaff = staffMembers;
-            newSchedule[room][shift]!.assignedStaff = staffMembers; // Initialize with AI suggestions
-            newSchedule[room][shift]!.aiReasoning = sugg.reason;
-            if (newSchedule[room][shift]!.status !== 'critical_pending') {
-                 newSchedule[room][shift]!.status = 'pending_gpt';
+            targetOp.gptSuggestedStaff = staffMembers;
+            targetOp.assignedStaff = staffMembers; 
+            targetOp.aiReasoning = sugg.reason;
+            // Only update status if it was 'empty'. If 'critical_pending', it might stay critical even with suggestions.
+            // Or, Julia might need to confirm if the suggestion resolves the critical aspect.
+            // For now, if AI suggests for a 'critical_pending', it becomes 'pending_gpt'.
+            if (targetOp.status === 'empty' || targetOp.status === 'critical_pending') {
+                 targetOp.status = 'pending_gpt';
             }
           }
         });
         return newSchedule;
       });
-      toast({ title: "KI Personalvorschläge generiert", description: `${suggestions.assignments.length} Vorschläge (mit je 2 Pflegern) warten auf Prüfung.` });
+      toast({ title: "KI Personalvorschläge aktualisiert", description: `${suggestions.assignments.length} Vorschläge (mit je 2 Pflegern) wurden von der KI ${currentWorkflowStepKey === 'PLAN_CREATED' ? 'generiert' : 'neu bewertet'}.` });
     } catch (error: any) {
       console.error("Fehler bei KI Vorschlägen:", error);
       toast({ title: "Fehler bei KI Vorschlägen", description: error.message || "Die KI konnte keine Vorschläge generieren.", variant: "destructive" });
-      setCurrentWorkflowStepKey('PLAN_CREATED');
+      // Revert to previous step if initial load failed, or stay in current if re-planning failed
+      if (currentWorkflowStepKey === 'GPT_SUGGESTIONS_READY' && previousWorkflowStepKey === 'PLAN_CREATED') {
+         setCurrentWorkflowStepKey('PLAN_CREATED');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [currentWorkflowStepKey, toast, allAssignmentsList]);
+  }, [allAssignmentsList, staff, toast, currentWorkflowStepKey, previousWorkflowStepKey, isLoading]);
 
   useEffect(() => {
     if (currentWorkflowStepKey === 'PLAN_CREATED' && !isLoading) {
@@ -158,8 +185,6 @@ export function useORData() {
     }
     setIsLoading(true);
     const input: SummarizeGptLearningInput = {
-      // Adjusting input for SummarizeGptLearningInput:
-      // Flatten the array of staff names for the string description
       juliaOverrides: currentOverrides.map(o => `${o.operationId}: [${o.originalSuggestion.join(', ')}] -> [${o.juliaSelection.join(', ')}] (${o.reason})`),
       numOverrides: currentOverrides.length,
       totalAssignments: TOTAL_ASSIGNMENTS_FOR_JULIA
@@ -173,16 +198,16 @@ export function useORData() {
         { text: "Nächste Optimierung: Verfeinerung der Komplexitätsbewertung für Personalpaare.", icon: Settings2 },
       ]);
       toast({ title: "KI Lernfortschritt aktualisiert", description: "Die KI hat aus den letzten Änderungen gelernt." });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Fehler bei KI Lern-Update", variant: "destructive" });
+    } catch (error: any)      {
+      console.error("Error in updateLearningSummary calling fetchAiLearningSummary:", error);
+      toast({ title: "Fehler bei KI Lern-Update", description: `Fehler beim Abrufen der KI-Lernzusammenfassung. Originalfehler: ${error.message}`, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   }, [toast, juliaOverrides.length]);
 
   useEffect(() => {
-    if (juliaOverrides.length === 0 && currentWorkflowStepKey !== 'PLAN_CREATED') {
+    if (juliaOverrides.length === 0 && currentWorkflowStepKey !== 'PLAN_CREATED' && currentWorkflowStepKey !== 'GPT_SUGGESTIONS_READY') {
         updateLearningSummary([]);
     }
   }, [juliaOverrides.length, currentWorkflowStepKey, updateLearningSummary]);
@@ -195,9 +220,8 @@ export function useORData() {
       const op = newSchedule[room]?.[shift];
       if (op && (op.status === 'pending_gpt' || op.status === 'critical_pending' || op.status === 'modified_julia')) {
         op.status = 'approved_julia';
-        // Ensure assignedStaff reflects the (potentially dual) gptSuggestedStaff if approved
         if (op.gptSuggestedStaff && op.gptSuggestedStaff.length > 0) {
-          op.assignedStaff = op.gptSuggestedStaff;
+          op.assignedStaff = op.gptSuggestedStaff; // Solidify AI suggestion on approve
         }
         toast({ title: "Vorschlag genehmigt", description: `Einsatz für ${room} - ${shift} wurde von Julia genehmigt.`});
       }
@@ -213,8 +237,12 @@ export function useORData() {
       const [room, shift] = operationId.split('-') as [OperatingRoomName, Shift];
       const op = newSchedule[room]?.[shift];
       if (op) {
-        const newStaffMembers = newStaffIds.map(id => getStaffMemberById(id)).filter(Boolean) as StaffMember[];
-        const originalStaffNames = (op.gptSuggestedStaff && op.gptSuggestedStaff.length > 0 ? op.gptSuggestedStaff.map(s => s.name) : op.assignedStaff.map(s => s.name)) || ["N/A"];
+        const currentStaffState = staff; // Use the latest staff state
+        const newStaffMembers = newStaffIds
+          .map(id => currentStaffState.find(s => s.id === id))
+          .filter(Boolean) as StaffMember[];
+        
+        const originalStaffNames = (op.gptSuggestedStaff && op.gptSuggestedStaff.length > 0 ? op.gptSuggestedStaff.map(s => s.name) : op.assignedStaff.map(s => s.name)) || ["N/A", "N/A"];
         
         op.assignedStaff = newStaffMembers;
         op.status = 'modified_julia';
@@ -222,8 +250,8 @@ export function useORData() {
         
         modifiedOverride = {
           operationId,
-          originalSuggestion: originalStaffNames,
-          juliaSelection: newStaffMembers.map(s => s.name),
+          originalSuggestion: originalStaffNames.slice(0,2), // Ensure it's always an array of 2 for consistency
+          juliaSelection: newStaffMembers.map(s => s.name).slice(0,2),
           reason,
         };
         toast({ title: "Vorschlag geändert", description: `Einsatz für ${room} - ${shift} wurde von Julia angepasst. KI lernt...`});
@@ -240,20 +268,50 @@ export function useORData() {
   };
   
   useEffect(() => {
-    if (currentWorkflowStepKey === 'GPT_SUGGESTIONS_READY' && juliaReviewedCount > 0) {
-      setCurrentWorkflowStepKey('JULIA_REVIEW');
+    let nextStepKey: WorkflowStepKey | null = null;
+    const currentOrder = ALL_WORKFLOW_STEPS.find(s => s.key === currentWorkflowStepKey)?.order || 0;
+
+    if ((currentWorkflowStepKey === 'GPT_SUGGESTIONS_READY' || currentWorkflowStepKey === 'JULIA_REVIEW') && juliaReviewedCount > 0 && juliaReviewedCount < TOTAL_ASSIGNMENTS_FOR_JULIA) {
+      const juliaReviewStep = ALL_WORKFLOW_STEPS.find(s => s.key === 'JULIA_REVIEW');
+      if (juliaReviewStep && juliaReviewStep.order > currentOrder) {
+        nextStepKey = 'JULIA_REVIEW';
+      } else if (currentWorkflowStepKey !== 'JULIA_REVIEW' && juliaReviewStep && juliaReviewStep.order === currentOrder) {
+         // If already in JULIA_REVIEW, no change, otherwise set it
+         nextStepKey = 'JULIA_REVIEW';
+      } else if (!juliaReviewStep) { // Should not happen
+         nextStepKey = 'JULIA_REVIEW'; 
+      }
+    } else if (currentWorkflowStepKey === 'JULIA_REVIEW' && juliaReviewedCount === TOTAL_ASSIGNMENTS_FOR_JULIA) {
+      nextStepKey = 'TORSTEN_FINAL_APPROVAL';
     }
-    if (currentWorkflowStepKey === 'JULIA_REVIEW' && juliaReviewedCount === TOTAL_ASSIGNMENTS_FOR_JULIA) {
-       setCurrentWorkflowStepKey('TORSTEN_FINAL_APPROVAL');
-       toast({title: "Julia's Prüfung abgeschlossen!", description: "Alle Vorschläge wurden bearbeitet. Warten auf finale Freigabe."});
+
+    if (nextStepKey && nextStepKey !== currentWorkflowStepKey) {
+      setPreviousWorkflowStepKey(currentWorkflowStepKey);
+      setCurrentWorkflowStepKey(nextStepKey);
     }
-  }, [juliaReviewedCount, currentWorkflowStepKey, toast]);
+  }, [juliaReviewedCount, currentWorkflowStepKey]);
+
+  useEffect(() => {
+    if (previousWorkflowStepKey === 'JULIA_REVIEW' && currentWorkflowStepKey === 'TORSTEN_FINAL_APPROVAL') {
+      setTimeout(() => {
+        toast({title: "Julia's Prüfung abgeschlossen!", description: "Alle Vorschläge wurden bearbeitet. Warten auf finale Freigabe."});
+      }, 0);
+    }
+    if (previousWorkflowStepKey === 'TORSTEN_FINAL_APPROVAL' && currentWorkflowStepKey === 'PLAN_FINALIZED') {
+      setTimeout(() => {
+        toast({title: "Plan finalisiert!", description: "Der OP-Personalplan wurde erfolgreich von Torsten Fast freigegeben.", className: "bg-green-600 text-white"});
+      }, 0);
+    }
+  }, [currentWorkflowStepKey, previousWorkflowStepKey, toast]);
+
 
   const approveAllByDemo = useCallback(() => {
     if (currentWorkflowStepKey !== 'JULIA_REVIEW' && currentWorkflowStepKey !== 'GPT_SUGGESTIONS_READY') {
       toast({title: "Aktion nicht möglich", description: "Alle Vorschläge können nur während Julias Prüfung genehmigt werden.", variant: "destructive"});
       return;
     }
+    const prevKey = currentWorkflowStepKey;
+    
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       allAssignmentsList.forEach(op => {
@@ -267,7 +325,9 @@ export function useORData() {
       });
       return newSchedule;
     });
+    setPreviousWorkflowStepKey(prevKey); // Set previous key before current key might change due to side effects
     toast({title: "Alle Vorschläge genehmigt (Demo)", description: "Alle ausstehenden KI-Vorschläge wurden automatisch genehmigt."});
+    // The useEffect for state transitions will handle setting the new currentWorkflowStepKey based on juliaReviewedCount.
   }, [currentWorkflowStepKey, allAssignmentsList, toast]);
 
   useEffect(() => {
@@ -285,6 +345,8 @@ export function useORData() {
       return;
     }
     let approvedCount = 0;
+    const prevKey = currentWorkflowStepKey;
+    
     setSchedule(prev => {
       const newSchedule = JSON.parse(JSON.stringify(prev));
       allAssignmentsList.forEach(op => {
@@ -299,6 +361,8 @@ export function useORData() {
       });
       return newSchedule;
     });
+    
+    setPreviousWorkflowStepKey(prevKey);
     if (approvedCount > 0) {
       toast({title: "KI-Optimierung durchgeführt", description: `${approvedCount} verbleibende Vorschläge wurden automatisch genehmigt.`});
     } else {
@@ -320,14 +384,102 @@ export function useORData() {
       });
       return newSchedule;
     });
+    setPreviousWorkflowStepKey(currentWorkflowStepKey);
     setCurrentWorkflowStepKey('PLAN_FINALIZED');
-    toast({title: "Plan finalisiert!", description: "Der OP-Personalplan wurde erfolgreich von Torsten Fast freigegeben.", className: "bg-green-600 text-white"});
   };
+
+  const reportStaffUnavailable = useCallback((staffId: string, isUnavailable: boolean) => {
+    const staffMemberToUpdate = staff.find(s => s.id === staffId);
+    if (!staffMemberToUpdate) {
+      toast({ title: "Fehler", description: `Personal mit ID ${staffId} nicht gefunden.`, variant: "destructive" });
+      return;
+    }
+
+    setStaff(prevStaff => 
+      prevStaff.map(s => s.id === staffId ? { ...s, isSick: isUnavailable } : s)
+    );
+
+    setSchedule(prevSchedule => {
+      const newSchedule = JSON.parse(JSON.stringify(prevSchedule)) as ORSchedule;
+      let affectedSlots = 0;
+
+      OPERATING_ROOMS.forEach(room => {
+        SHIFTS.forEach(shift => {
+          const operation = newSchedule[room]?.[shift];
+          if (operation) {
+            let staffChangedInSlot = false;
+            // Check assigned staff
+            if (operation.assignedStaff.some(s => s.id === staffId)) {
+              operation.assignedStaff = operation.assignedStaff.filter(s => s.id !== staffId);
+              staffChangedInSlot = true;
+            }
+            // Check GPT suggested staff (if they were the basis of current assignment)
+            if (operation.gptSuggestedStaff && operation.gptSuggestedStaff.some(s => s.id === staffId)) {
+                operation.gptSuggestedStaff = operation.gptSuggestedStaff.filter(s => s.id !== staffId);
+                 // If the original suggestion is now invalid, AI should re-evaluate.
+                 // If Julia had modified it, her modification stands unless she re-evaluates.
+                 // For simplicity now, if AI suggested the sick person, let AI re-evaluate.
+                if (operation.status === 'pending_gpt' || operation.status === 'approved_julia' || operation.status === 'critical_pending') {
+                    staffChangedInSlot = true; 
+                }
+            }
+
+            if (staffChangedInSlot) {
+              affectedSlots++;
+              operation.notes = `${isUnavailable ? staffMemberToUpdate.name + ' jetzt abwesend. ' : staffMemberToUpdate.name + ' wieder verfügbar. '} Plan muss ggf. angepasst werden.`;
+              // If slot becomes understaffed (less than 2) or was relying on this staff, mark for re-evaluation
+              if (operation.assignedStaff.length < 2 || operation.status === 'pending_gpt') {
+                 operation.status = 'critical_pending'; // Mark as critical to get AI attention
+              } else if (operation.assignedStaff.length === 0) {
+                 operation.status = 'empty';
+              }
+              // Clear AI suggestion if it contained the now unavailable staff, to force re-suggestion
+              if (operation.gptSuggestedStaff && operation.gptSuggestedStaff.some(s => s.id === staffId)) {
+                operation.gptSuggestedStaff = [];
+              }
+            }
+          }
+        });
+      });
+      
+      if (affectedSlots > 0) {
+        toast({ title: "Personalverfügbarkeit geändert", description: `${staffMemberToUpdate.name} ist ${isUnavailable ? 'jetzt abwesend' : 'wieder verfügbar'}. ${affectedSlots} Einsätze betroffen. KI prüft Anpassungen.` });
+      } else {
+         toast({ title: "Personalverfügbarkeit geändert", description: `${staffMemberToUpdate.name} ist ${isUnavailable ? 'jetzt abwesend' : 'wieder verfügbar'}. Keine direkten Planänderungen nötig.` });
+      }
+      return newSchedule;
+    });
+
+    // Trigger AI re-planning
+    // Resetting workflow step might be too drastic if only one staff changed.
+    // Better to let loadGptSuggestions check for 'critical_pending' or 'empty' slots.
+    // We need to ensure `loadGptSuggestions` runs after state updates.
+    // A slight delay or a dedicated trigger might be good.
+    setTimeout(() => {
+        // Set a flag or directly call loadGptSuggestions if current step allows AI interaction
+        if(currentWorkflowStepKey !== 'PLAN_FINALIZED'){ // Allow re-planning unless finalized
+            setPreviousWorkflowStepKey(currentWorkflowStepKey);
+            setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY'); // Force re-evaluation state
+            // loadGptSuggestions will be called by useEffect watching currentWorkflowStepKey or PLAN_CREATED if reset
+            // Or call it directly if we refine the workflow steps
+        }
+    }, 100); // Ensure state updates have propagated
+
+  }, [staff, toast, currentWorkflowStepKey]);
+  
+  // Expose reportStaffUnavailable for testing (e.g. via console)
+  useEffect(() => {
+    // @ts-ignore
+    window.reportStaffUnavailable = reportStaffUnavailable;
+    return () => { // @ts-ignore
+      window.reportStaffUnavailable = undefined;
+    }
+  }, [reportStaffUnavailable]);
 
 
   return {
     schedule,
-    staff,
+    staff, // Expose the dynamic staff list
     workflowSteps: getWorkflowSteps(),
     currentWorkflowStepKey,
     aiRawLearningSummary,
@@ -339,9 +491,10 @@ export function useORData() {
     handleModify,
     handleGptOptimize,
     handleFinalizePlan,
-    loadGptSuggestions,
+    loadGptSuggestions, // Expose for potential manual refresh
+    reportStaffUnavailable, // Expose the new function
     juliaProgress: { reviewed: juliaReviewedCount, total: TOTAL_ASSIGNMENTS_FOR_JULIA },
-    criticalAlertsCount: allAssignmentsList.filter(op => op.status === 'critical_pending' || (op.room === 'DaVinci' && op.shift === 'BD2' && op.assignedStaff.length < 2)).length,
+    criticalAlertsCount: allAssignmentsList.filter(op => op.status === 'critical_pending' || (op.assignedStaff.length < 2 && op.status !== 'empty' && op.status !== 'final_approved')).length,
     juliaModificationsCount: juliaOverrides.length,
     criticalSituationData,
     optimizationSuggestionsData,
@@ -349,3 +502,6 @@ export function useORData() {
     handleRescheduleStaff,
   };
 }
+    
+
+    
