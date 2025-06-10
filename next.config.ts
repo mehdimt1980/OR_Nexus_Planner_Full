@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  output: 'standalone', // Add this for optimized production builds
 };
 
 export default nextConfig;
