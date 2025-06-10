@@ -6,7 +6,7 @@ export const STAFF_MEMBERS: StaffMember[] = [
   { id: 'staff_1', name: 'Karin R.', skills: ['Allgemein', 'DaVinci'] },
   { id: 'staff_2', name: 'Fatima R.', skills: ['Allgemein', 'Herz-Thorax'] },
   { id: 'staff_3', name: 'Gerhard K.', skills: ['Allgemein', 'Neuro'] },
-  { id: 'staff_4', name: 'Ulla K.', isSick: true, skills: ['Allgemein', 'DaVinci', 'EPZ'] },
+  { id: 'staff_4', name: 'Ulla K.', skills: ['Allgemein', 'DaVinci', 'EPZ'] },
   { id: 'staff_5', name: 'Michael B.', skills: ['Allgemein'] },
   { id: 'staff_6', name: 'Sandra P.', skills: ['Allgemein', 'GYN'] },
   { id: 'staff_7', name: 'Jürgen S.', skills: ['Allgemein', 'URO'] },
