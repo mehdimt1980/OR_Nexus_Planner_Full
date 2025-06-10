@@ -1,0 +1,79 @@
+# GitHub Actions workflow to build a Docker image, push to Google Artifact Registry,
+# and deploy to Google Cloud Run.
+
+name: Build and Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main # Or your default deployment branch
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # Set this in GitHub Secrets
+  GCP_REGION: "europe-west1" # Choose your GCP region
+  ARTIFACT_REGISTRY_REPO_NAME: "nexus-or-planner-repo" # Your Artifact Registry repo name
+  CLOUD_RUN_IMAGE_NAME: "nexus-or-planner" # Name of the image in Artifact Registry
+  CLOUD_RUN_SERVICE_NAME: "nexus-or-planner-service" # Your Cloud Run service name
+  CLOUD_RUN_PORT: "3000" # Port your Next.js app runs on
+
+jobs:
+  build-and-deploy:
+    name: Build, Push, and Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read"
+      id-token: "write" # Needed for authentication using Workload Identity Federation
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }} # e.g., projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }} # e.g., your-service-account@your-project-id.iam.gserviceaccount.com
+          # Fallback to SA Key if Workload Identity Federation is not set up (less recommended)
+          # credentials_json: ${{ secrets.GCP_SA_KEY }} # Store your GCP Service Account JSON key as a GitHub secret
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.CLOUD_RUN_IMAGE_NAME }}:${{ github.sha }} \
+            -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.CLOUD_RUN_IMAGE_NAME }}:latest \
+            .
+
+      - name: Push Docker image to Artifact Registry
+        run: |
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.CLOUD_RUN_IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.CLOUD_RUN_IMAGE_NAME }}:latest
+
+      - name: Deploy to Google Cloud Run
+        run: |
+          gcloud run deploy ${{ env.CLOUD_RUN_SERVICE_NAME }} \
+            --image ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.CLOUD_RUN_IMAGE_NAME }}:${{ github.sha }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --port ${{ env.CLOUD_RUN_PORT }} \
+            --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 2 # Adjust as needed
+            # Add any other flags like --set-env-vars, --update-secrets, --cpu, --memory
+            # Example for environment variables (use Secret Manager for sensitive data):
+            # --set-env-vars=NODE_ENV="production",MY_OTHER_VAR="value"
+            # Example for linking a secret from Secret Manager (replace with your secret name and version):
+            # --update-secrets=GOOGLE_API_KEY=your-google-api-key-secret:latest
+            # Ensure the Cloud Run service account has access to these secrets.
+        env:
+          # This ensures GOOGLE_API_KEY is available during the gcloud run deploy command if needed,
+          # but it's better to set it directly in Cloud Run via Secret Manager.
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY_FOR_CI }} # If you need to pass it to the deploy command itself
+
+    outputs:
+      service_url: ${{ steps.deploy.outputs.url }}
