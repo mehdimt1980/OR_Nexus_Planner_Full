@@ -1,0 +1,12 @@
+Dockerfile
+.dockerignore
+node_modules
+npm-debug.log
+README.md
+.next
+.git
+.gitignore
+# Add anything else you don't want in the Docker image
+# For example, if you have a .env file, you might add it here
+# but environment variables should ideally be set in Azure.
+# .env
