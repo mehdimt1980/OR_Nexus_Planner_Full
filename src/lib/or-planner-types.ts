@@ -50,14 +50,15 @@ export type WorkflowStep = {
   key: WorkflowStepKey;
   label: string;
   status: 'completed' | 'active' | 'pending';
+  order: number; // Added for easier step comparison
 };
 
 export const ALL_WORKFLOW_STEPS: WorkflowStep[] = [
-  { key: 'PLAN_CREATED', label: 'OP Plan erstellt', status: 'completed' },
-  { key: 'GPT_SUGGESTIONS_READY', label: 'KI Personalvorschläge', status: 'pending' },
-  { key: 'JULIA_REVIEW', label: 'Prüfung & Freigabe (Julia W.)', status: 'pending' },
-  { key: 'TORSTEN_FINAL_APPROVAL', label: 'Finale Freigabe (Torsten F.)', status: 'pending' },
-  { key: 'PLAN_FINALIZED', label: 'Plan Finalisiert', status: 'pending' },
+  { key: 'PLAN_CREATED', label: 'OP Plan erstellt', status: 'pending', order: 1 },
+  { key: 'GPT_SUGGESTIONS_READY', label: 'KI Personalvorschläge', status: 'pending', order: 2 },
+  { key: 'JULIA_REVIEW', label: 'Prüfung & Freigabe (Julia W.)', status: 'pending', order: 3 },
+  { key: 'TORSTEN_FINAL_APPROVAL', label: 'Finale Freigabe (Torsten F.)', status: 'pending', order: 4 },
+  { key: 'PLAN_FINALIZED', label: 'Plan Finalisiert', status: 'pending', order: 5 },
 ];
 
 export interface JuliaOverride {
@@ -66,3 +67,5 @@ export interface JuliaOverride {
   juliaSelection: string[]; // staff names array
   reason: string;
 }
+
+    
