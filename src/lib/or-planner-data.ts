@@ -6,7 +6,7 @@ export const STAFF_MEMBERS: StaffMember[] = [
   { id: 'staff_1', name: 'Karin R.', skills: ['Allgemein', 'DaVinci'] },
   { id: 'staff_2', name: 'Fatima R.', skills: ['Allgemein', 'Herz-Thorax'] },
   { id: 'staff_3', name: 'Gerhard K.', skills: ['Allgemein', 'Neuro'] },
-  { id: 'staff_4', name: 'Ulla K.', skills: ['Allgemein', 'DaVinci', 'EPZ'] },
+  { id: 'staff_4', name: 'Ulla K.', skills: ['Allgemein', 'DaVinci', 'EPZ'] }, // Ulla K. is no longer sick by default
   { id: 'staff_5', name: 'Michael B.', skills: ['Allgemein'] },
   { id: 'staff_6', name: 'Sandra P.', skills: ['Allgemein', 'GYN'] },
   { id: 'staff_7', name: 'Jürgen S.', skills: ['Allgemein', 'URO'] },
@@ -39,9 +39,9 @@ const ACTIVE_OPERATIONS_TEMPLATE: { room: OperatingRoomName, shift: Shift, proce
   // URO (2)
   { room: 'URO', shift: 'BD1', procedureName: 'TUR-P', complexity: 'Hoch' },
   { room: 'URO', shift: 'BD2', procedureName: 'Nierensteinentfernung', complexity: 'Hoch' },
-  // DaVinci (2) - BD2 potentially critical due to Ulla K. sickness
+  // DaVinci (2)
   { room: 'DaVinci', shift: 'BD1', procedureName: 'DaVinci Prostatektomie', complexity: 'Sehr Hoch' },
-  { room: 'DaVinci', shift: 'BD2', procedureName: 'DaVinci Nephrektomie', complexity: 'Sehr Hoch' }, // Critical slot
+  { room: 'DaVinci', shift: 'BD2', procedureName: 'DaVinci Nephrektomie', complexity: 'Sehr Hoch' },
   // PCH (2)
   { room: 'PCH', shift: 'BD1', procedureName: 'Liposuktion', complexity: 'Mittel' },
   { room: 'PCH', shift: 'BD2', procedureName: 'Blepharoplastik', complexity: 'Niedrig' },
@@ -54,7 +54,11 @@ export const INITIAL_SCHEDULE_TEMPLATE = (): ORSchedule => {
     SHIFTS.forEach(shift => {
       const templateOp = ACTIVE_OPERATIONS_TEMPLATE.find(op => op.room === room && op.shift === shift);
       if (templateOp) {
-        const isCriticalDaVinci = room === 'DaVinci' && shift === 'BD2';
+        // Ulla K. is no longer sick, so the initial state of DaVinci BD2 is not critical by default due to her absence.
+        // It remains 'Sehr Hoch' complexity.
+        const initialStatus: OperationAssignment['status'] = 'empty';
+        const initialNotes: string | undefined = undefined;
+
         schedule[room][shift] = {
           id: `${room}-${shift}`,
           room,
@@ -63,8 +67,8 @@ export const INITIAL_SCHEDULE_TEMPLATE = (): ORSchedule => {
           complexity: templateOp.complexity,
           assignedStaff: [], // Initialize as empty array
           gptSuggestedStaff: [], // Initialize as empty array
-          status: isCriticalDaVinci ? 'critical_pending' : 'empty',
-          notes: isCriticalDaVinci ? "Ulla K. (DaVinci-Expertin) krankgemeldet! Benötigt 2 erfahrene Pfleger." : undefined,
+          status: initialStatus,
+          notes: initialNotes,
         };
       } else {
         schedule[room][shift] = null; // Inactive slot
@@ -77,5 +81,7 @@ export const INITIAL_SCHEDULE_TEMPLATE = (): ORSchedule => {
 export const getStaffMemberById = (id: string): StaffMember | undefined => STAFF_MEMBERS.find(s => s.id === id);
 export const getStaffMemberByName = (name: string): StaffMember | undefined => STAFF_MEMBERS.find(s => s.name === name);
 
+// These constants represent the initial state if needed elsewhere,
+// but useORData hook now dynamically generates these for AI calls.
 export const AVAILABLE_STAFF_FOR_AI = STAFF_MEMBERS.filter(s => !s.isSick).map(s => s.name);
 export const SICK_STAFF_FOR_AI = STAFF_MEMBERS.filter(s => s.isSick).map(s => s.name);
