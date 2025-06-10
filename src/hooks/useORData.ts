@@ -35,11 +35,13 @@ export function useORData() {
   const [juliaOverrides, setJuliaOverrides] = useState<JuliaOverride[]>([]);
   const { toast } = useToast();
 
+  // Ulla K. is no longer sick by default, so this critical situation needs to be more generic or different.
+  // Example: Shortage for a high-complexity area.
   const [criticalSituationData, setCriticalSituationData] = useState<CriticalSituationData>({
-    title: "Kritische Situation erkannt",
-    situation: "Saal DaVinci BD2: Ulla K. (Expertin) krank - 2 komplexe DaVinci OPs betroffen, benötigen je 2 erfahrene Pfleger.",
-    gptSuggestion: "Gerhard K. & Karin R. für DaVinci BD2 einplanen. Gerhard von UCH BD1 verlängern, Karin ist DaVinci-erfahren.",
-    alternative: "Fatima R. & Michael B. für DaVinci BD2. Fatima DaVinci-zertifiziert, Michael als Unterstützung.",
+    title: "Kritische Situation: Personalengpass Neuro",
+    situation: "Saal UCH BD1: Für eine komplexe Neuro-OP (Sehr Hoch) ist nur ein Neuro-erfahrener Pfleger verfügbar (Gerhard K.). Benötigt werden zwei.",
+    gptSuggestion: "Karin R. (DaVinci, Allgemein) temporär für Neuro-Assistenz einplanen. Hat Erfahrung mit komplexen OPs und kann unter Anleitung unterstützen.",
+    alternative: "Prüfen, ob eine andere Neuro-OP (z.B. geringere Komplexität) verschoben oder mit weniger erfahrenem Personal (Michael B. unter Supervision) besetzt werden kann, um Gerhard K. für die sehr hohe Komplexität freizumachen.",
   });
 
   const [optimizationSuggestionsData, setOptimizationSuggestionsData] = useState<OptimizationSuggestionItem[]>([
