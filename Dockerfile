@@ -8,8 +8,8 @@ ENV NODE_ENV=production
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm ci --only=production --ignore-scripts
+# Install dependencies (INCLUDING devDependencies for build)
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
