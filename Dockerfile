@@ -6,16 +6,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install ALL dependencies (including devDependencies)
-# Don't set NODE_ENV=production until after npm install!
-RUN npm ci --ignore-scripts
+# Keep NODE_ENV unset to ensure devDependencies are installed
+RUN npm ci --include=dev
 
 # Copy source code
 COPY . .
 
-# Now set production mode for the build
-ENV NODE_ENV=production
-
-# Build the application
+# Build the application (Next.js will handle production optimizations)
 RUN npm run build
 
 # Stage 2: Production image
