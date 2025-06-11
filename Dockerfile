@@ -2,22 +2,33 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
+# Ensure NODE_ENV is NOT set to production during build
+ENV NODE_ENV=
+
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install ALL dependencies (including devDependencies)
-# Keep NODE_ENV unset to ensure devDependencies are installed
-RUN npm ci --include=dev
+# Install ALL dependencies including devDependencies
+RUN npm ci
 
-# Copy source code
+# Copy ALL source code
 COPY . .
 
-# Build the application (Next.js will handle production optimizations)
+# Verify components exist (debug step)
+RUN ls -la src/components/or-planner/ || echo "Components directory not found"
+
+# Set NODE_ENV to production for the build
+ENV NODE_ENV=production
+
+# Build the application
 RUN npm run build
 
 # Stage 2: Production image
 FROM node:20-slim AS runner
 WORKDIR /app
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -38,7 +49,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/api/health || exit 1
+  CMD curl -f http://localhost:3000 || exit 1
 
 # Start the application
 CMD ["node", "server.js"]
