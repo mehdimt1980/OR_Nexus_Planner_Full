@@ -8,15 +8,13 @@ on:
 env:
   RESOURCE_GROUP: nexus-or-planner-rg
   AKS_CLUSTER: nexus-or-planner-aks
-  ACR_NAME: nexusorplanneracr
+  ACR_NAME: nexusorplanner2025
   IMAGE_NAME: nexus-or-planner
   LOCATION: westeurope
 
 jobs:
   setup-azure-resources:
     runs-on: ubuntu-latest
-    outputs:
-      acr-login-server: ${{ steps.acr-login.outputs.acr_login_server }}
     
     steps:
     - name: Checkout code
@@ -26,6 +24,20 @@ jobs:
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Register Azure Resource Providers
+      run: |
+        echo "Registering required Azure resource providers..."
+        az provider register --namespace Microsoft.ContainerService
+        az provider register --namespace Microsoft.Insights
+        az provider register --namespace Microsoft.OperationalInsights
+        az provider register --namespace Microsoft.OperationsManagement
+        
+        echo "Waiting for providers to register..."
+        timeout 300 bash -c 'until [ "$(az provider show --namespace Microsoft.ContainerService --query registrationState -o tsv)" = "Registered" ]; do sleep 10; done'
+        timeout 300 bash -c 'until [ "$(az provider show --namespace Microsoft.Insights --query registrationState -o tsv)" = "Registered" ]; do sleep 10; done'
+        
+        echo "✅ Resource providers registered successfully"
 
     - name: Create Resource Group
       run: |
@@ -50,30 +62,11 @@ jobs:
           --generate-ssh-keys \
           --attach-acr ${{ env.ACR_NAME }}
 
-    - name: Get ACR login server
-      id: acr-login
-      run: |
-        ACR_LOGIN_SERVER=$(az acr show --name ${{ env.ACR_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} --query "loginServer" --output tsv)
-        echo "acr_login_server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
-
-  deploy-application:
-    needs: setup-azure-resources
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
     - name: Build and push Docker image
       run: |
         az acr login --name ${{ env.ACR_NAME }}
-        docker build -t ${{ needs.setup-azure-resources.outputs.acr-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-        docker push ${{ needs.setup-azure-resources.outputs.acr-login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+        docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
     - name: Get AKS credentials
       run: |
@@ -123,5 +116,5 @@ jobs:
         echo "Waiting for external IP..."
         sleep 60
         EXTERNAL_IP=$(kubectl get svc --namespace ingress-nginx ingress-nginx-controller --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
-        echo "External IP: $EXTERNAL_IP"
-        echo "Your application will be available at: http://$EXTERNAL_IP"
+        echo "🌍 Your application will be available at: http://$EXTERNAL_IP"
+        echo "📝 Application URL: http://$EXTERNAL_IP" >> $GITHUB_STEP_SUMMARY
