@@ -2,45 +2,45 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Install pnpm for dependency management if you switch, otherwise npm is fine
-# RUN npm install -g pnpm
+# Set environment for build
+ENV NODE_ENV=production
 
-ENV NODE_ENV build
-
-# Copy package.json and lock file
-COPY package.json ./
-# If using pnpm, copy pnpm-lock.yaml. If npm, package-lock.json (already handled by package*.json)
-# COPY pnpm-lock.yaml ./
-COPY package-lock.json ./
-
+# Copy package files
+COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN npm install --frozen-lockfile
-# Or: RUN pnpm install --frozen-lockfile
+RUN npm ci --only=production --ignore-scripts
 
+# Copy source code
 COPY . .
 
-# Build the Next.js application
-# The standalone output will be in .next/standalone
+# Build the application
 RUN npm run build
 
 # Stage 2: Production image
-# Use a more minimal base image for the runner
 FROM node:20-slim AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
-# ENV PORT 3000 # Next.js will default to 3000, but you can set it if needed
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Create a non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
 # Copy the standalone output from the builder stage
-COPY --from=builder /app/.next/standalone ./
-# Copy the public and static folders from the build output
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Expose the port the app runs on
+USER nextjs
+
+# Expose the port
 EXPOSE 3000
 
-# Start the Next.js application
-# The server.js file is created by the standalone output
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Start the application
 CMD ["node", "server.js"]
