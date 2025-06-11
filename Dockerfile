@@ -2,17 +2,18 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Set environment for build
-ENV NODE_ENV=production
-
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install dependencies (INCLUDING devDependencies for build)
+# Install ALL dependencies (including devDependencies)
+# Don't set NODE_ENV=production until after npm install!
 RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
+
+# Now set production mode for the build
+ENV NODE_ENV=production
 
 # Build the application
 RUN npm run build
