@@ -1,4 +1,4 @@
-yamlname: Deploy to Azure AKS
+name: Deploy to Azure AKS
 
 on:
   workflow_dispatch:
