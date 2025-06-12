@@ -1,0 +1,57 @@
+name: Deploy Nexus OR Planner to Azure Container Apps
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+  CONTAINER_APP_NAME: ${{ secrets.CONTAINER_APP_NAME }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@v4
+
+    - name: 'Login to Azure'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: 'Build and push image to ACR'
+      run: |
+        echo "Building image with tag: ${{ github.sha }}"
+        az acr build \
+          --registry ${{ env.ACR_NAME }} \
+          --image nexus-or-planner:${{ github.sha }} \
+          --image nexus-or-planner:latest \
+          .
+
+    - name: 'Update Container App'
+      run: |
+        echo "Updating container app with new image..."
+        az containerapp update \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.ACR_NAME }}.azurecr.io/nexus-or-planner:${{ github.sha }} \
+          --set-env-vars GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY }}" NODE_ENV=production PORT=3000
+
+    - name: 'Verify Deployment'
+      run: |
+        echo "Getting application URL..."
+        APP_URL=$(az containerapp show \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --query "properties.configuration.ingress.fqdn" -o tsv)
+        echo "Application deployed at: https://$APP_URL"
+
+    - name: 'Azure logout'
+      run: |
+        az logout
