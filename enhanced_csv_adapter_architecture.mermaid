@@ -1,0 +1,102 @@
+graph TB
+    %% Hospital Domain
+    subgraph "Hospital Domain (On-Premise)"
+        USER["👤 Hospital Staff<br/>Julia W. / Torsten F."]
+        KIS["🏥 Hospital KIS<br/>Krankenhausinformationssystem"]
+        EXPORT["📄 CSV Export Engine<br/>FHIR-Compatible Output"]
+        CSV_FILES["📁 Raw CSV Files<br/>- staff_fhir.csv<br/>- operations_fhir.csv<br/>- schedule_fhir.csv"]
+    end
+
+    %% CSV Adapter Domain (Following Caresyntax Pattern)
+    subgraph "CSV Adapter Domain Boundary"
+        subgraph "Integration Layer"
+            INTEGRATION["🔌 Integration Engine<br/>(CSV Format)<br/>Any CSV Format"]
+            FHIR_API["📋 FHIR API Adapter<br/>CSV → FHIR Conversion"]
+        end
+        
+        subgraph "PII Management Layer"
+            PII_SERVICE["🛡️ PII Management Service<br/>- Pseudonymization<br/>- Data Anonymization<br/>- Privacy Controls"]
+            PII_DB["🗄️ PII Mapping DB<br/>(Local)<br/>Pseudonym ↔ Real ID"]
+        end
+        
+        subgraph "Data Processing Pipeline"
+            FHIR_INGESTION["📥 FHIR Ingestion Service<br/>Healthcare Data Processing"]
+            KINESIS_STREAM["⚡ Azure Event Hubs<br/>FHIR Ingest Stream<br/>(Real-time)"]
+            FHIR_NORMALIZE["🔄 FHIR Normalization Service<br/>Data Standardization"]
+        end
+        
+        subgraph "Data Storage Layer"
+            MONGO["🍃 MongoDB<br/>Operational Data<br/>Fast Read/Write"]
+            POSTGRES["🐘 PostgreSQL<br/>Structured Data<br/>ACID Compliance"]
+        end
+    end
+
+    %% Azure Cloud Domain
+    subgraph "Azure Cloud Domain"
+        subgraph "Data Warehouse"
+            SYNAPSE["📊 Azure Synapse<br/>Data Warehouse<br/>(Analytics)"]
+            WAREHOUSE_STAGING["📋 Warehouse<br/>Staging Bucket"]
+        end
+        
+        subgraph "Application Services"
+            OR_SERVICE["🏥 CX-OR Patient Data<br/>(Worklist) Service<br/>Pseudonymized Data"]
+            NEXUS_APP["🚀 NEXUS OR Planner<br/>Main Application"]
+        end
+        
+        subgraph "AI & Analytics"
+            AI_ANONYMIZER["🤖 AI Data Anonymizer<br/>Final PII Removal"]
+            GOOGLE_AI["🧠 Google AI<br/>Gemini 2.0 Flash"]
+        end
+    end
+
+    %% Data Flow Connections
+    USER -->|"User Requests"| KIS
+    KIS -->|"Daily Export"| EXPORT
+    EXPORT -->|"FHIR-compatible CSV"| CSV_FILES
+    
+    CSV_FILES -->|"Automated Processing"| INTEGRATION
+    INTEGRATION -->|"Any CSV Format"| FHIR_API
+    FHIR_API -->|"FHIR Standard"| PII_SERVICE
+    
+    PII_SERVICE <-->|"Pseudonym Mapping"| PII_DB
+    PII_SERVICE -->|"Pseudonymized FHIR"| FHIR_INGESTION
+    
+    FHIR_INGESTION -->|"Real-time Stream"| KINESIS_STREAM
+    KINESIS_STREAM -->|"FHIR Ingest Topic"| FHIR_NORMALIZE
+    
+    FHIR_NORMALIZE -->|"Operational Data"| MONGO
+    FHIR_NORMALIZE -->|"Structured Data"| POSTGRES
+    FHIR_NORMALIZE -->|"Transformed Data"| SYNAPSE
+    
+    MONGO -->|"CORE Data Topic"| OR_SERVICE
+    POSTGRES -->|"Structured Queries"| OR_SERVICE
+    OR_SERVICE -->|"Patient Worklist"| NEXUS_APP
+    
+    SYNAPSE -->|"Analytics Data"| WAREHOUSE_STAGING
+    WAREHOUSE_STAGING -->|"Anonymous Patterns"| AI_ANONYMIZER
+    AI_ANONYMIZER -->|"No PII"| GOOGLE_AI
+    
+    GOOGLE_AI -->|"AI Insights"| NEXUS_APP
+    NEXUS_APP -->|"Web Interface"| USER
+
+    %% Notes
+    NOTE1["📝 Note: FHIR implemented before Kafka<br/>Will be replaced by Kafka for enterprise<br/>streaming capabilities"]
+    NOTE2["📝 Note: App calls PII Management Service<br/>whenever patient personally<br/>identifiable information is required"]
+    NOTE3["📝 Note: Direct FHIR consumption to be<br/>replaced with Core Data Model<br/>consumption"]
+
+    %% Styling
+    classDef hospital fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    classDef adapter fill:#fd7e14,stroke:#e8680a,stroke-width:2px,color:#fff
+    classDef pii fill:#dc3545,stroke:#c82333,stroke-width:3px,color:#fff
+    classDef azure fill:#0078d4,stroke:#005a9e,stroke-width:2px,color:#fff
+    classDef ai fill:#6f42c1,stroke:#5a32a3,stroke-width:2px,color:#fff
+    classDef data fill:#17a2b8,stroke:#138496,stroke-width:2px,color:#fff
+    classDef notes fill:#ffc107,stroke:#e0a800,stroke-width:1px,color:#000
+    
+    class USER,KIS,EXPORT,CSV_FILES hospital
+    class INTEGRATION,FHIR_API,FHIR_INGESTION,KINESIS_STREAM,FHIR_NORMALIZE adapter
+    class PII_SERVICE,PII_DB pii
+    class SYNAPSE,WAREHOUSE_STAGING,OR_SERVICE,NEXUS_APP azure
+    class AI_ANONYMIZER,GOOGLE_AI ai
+    class MONGO,POSTGRES data
+    class NOTE1,NOTE2,NOTE3 notes
