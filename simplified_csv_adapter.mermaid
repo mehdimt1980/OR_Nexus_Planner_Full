@@ -1,0 +1,84 @@
+graph TB
+    %% Hospital Domain
+    subgraph "Hospital IT Infrastructure"
+        USER["👤 Hospital Staff<br/>Julia W. / Torsten F."]
+        KIS["🏥 Hospital KIS<br/>Krankenhausinformationssystem"]
+        EXPORT["📄 Data Export<br/>CSV/Other Formats?"]
+        DATA_FILES["📁 Hospital Data<br/>- Staff schedules<br/>- OR schedules<br/>- Patient data<br/>- Equipment data"]
+    end
+
+    %% CSV Adapter (What we plan to build)
+    subgraph "CSV Adapter (Planned Solution)"
+        subgraph "Data Processing"
+            ADAPTER["🔌 CSV Adapter<br/>Flexible Input Processing"]
+            TRANSFORM["🔄 Data Transformation<br/>Format Standardization"]
+        end
+        
+        subgraph "Security & Privacy"
+            PRIVACY["🛡️ Privacy Protection<br/>PII Handling<br/>Data Anonymization"]
+        end
+        
+        subgraph "Data Storage"
+            MONGO["🍃 MongoDB<br/>Operational Data<br/>Fast Read/Write"]
+            POSTGRES["🐘 PostgreSQL<br/>Structured Data<br/>ACID Compliance"]
+        end
+    end
+
+    %% OR Planner Application (Azure Cloud)
+    subgraph "Azure Cloud Platform"
+        subgraph "Development & Build"
+            CODE["💻 OR Planner Code<br/>CSV Adapter + Application"]
+            DOCKER_BUILD["🐳 Docker Build<br/>Create Container Images"]
+        end
+        
+        subgraph "Container Pipeline"
+            ACR["📦 Azure Container Registry<br/>Docker Image Storage"]
+            ACA["☁️ Azure Container Apps<br/>Running Docker Containers<br/>NEXUS OR Planner"]
+        end
+    end
+
+    %% Data Flow
+    USER -->|"Uses system"| KIS
+    KIS -->|"Exports data"| EXPORT
+    EXPORT -->|"Data files"| DATA_FILES
+    
+    DATA_FILES -.->|"To be discussed:<br/>• What formats?<br/>• How often?<br/>• What data?"| ADAPTER
+    
+    ADAPTER -->|"Process & validate"| TRANSFORM
+    TRANSFORM -->|"Apply privacy rules"| PRIVACY
+    PRIVACY -->|"Store operational data"| MONGO
+    PRIVACY -->|"Store structured data"| POSTGRES
+    
+    %% Docker Pipeline Flow
+    CODE -->|"Build process"| DOCKER_BUILD
+    DOCKER_BUILD -->|"Push images"| ACR
+    ACR -->|"Deploy containers"| ACA
+    
+    MONGO -->|"Fast data access"| ACA
+    POSTGRES -->|"Structured queries"| ACA
+    ACA -->|"OR scheduling interface"| USER
+
+    %% Discussion Points
+    subgraph "Key Discussion Topics"
+        QUESTIONS["❓ Questions for Christian:<br/>• Available data formats?<br/>• Export capabilities?<br/>• Security requirements?<br/>• Integration preferences?<br/>• Data update frequency?<br/>• Network access rules?"]
+    end
+
+    %% Styling
+    classDef hospital fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    classDef adapter fill:#fd7e14,stroke:#e8680a,stroke-width:3px,color:#fff
+    classDef privacy fill:#dc3545,stroke:#c82333,stroke-width:2px,color:#fff
+    classDef azure fill:#0078d4,stroke:#005a9e,stroke-width:2px,color:#fff
+    classDef docker fill:#2496ed,stroke:#1a75bd,stroke-width:2px,color:#fff
+    classDef app fill:#6f42c1,stroke:#5a32a3,stroke-width:2px,color:#fff
+    classDef data fill:#17a2b8,stroke:#138496,stroke-width:2px,color:#fff
+    
+    classDef data fill:#17a2b8,stroke:#138496,stroke-width:2px,color:#fff
+    classDef questions fill:#ffc107,stroke:#e0a800,stroke-width:2px,color:#000
+    
+    class USER,KIS,EXPORT,DATA_FILES hospital
+    class ADAPTER,TRANSFORM adapter
+    class PRIVACY privacy
+    class CODE,DOCKER_BUILD docker
+    class ACR,ACA azure
+    class MONGO,POSTGRES data
+    class QUESTIONS questions
