@@ -1,3 +1,4 @@
+// src/app/page.tsx - Updated with Julia Training Panel
 
 "use client";
 import React from 'react';
@@ -8,6 +9,7 @@ import OperatingRoomScheduleTable from '@/components/or-planner/OperatingRoomSch
 import AiAssistantPanel from '@/components/or-planner/AiAssistantPanel';
 import JuliaRecommendationsPanel from '@/components/or-planner/JuliaRecommendationsPanel';
 import AssignmentModal from '@/components/or-planner/AssignmentModal';
+import JuliaTrainingPanel from '@/components/or-planner/JuliaTrainingPanel'; // Add this import
 import { useORData } from '@/hooks/useORData';
 import { STAFF_MEMBERS } from '@/lib/or-planner-data';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -35,6 +37,16 @@ export default function ORNexusPlannerPage() {
     handleExtendStaff,
     handleRescheduleStaff,
   } = useORData();
+
+  // Add Julia training state (for now, we'll use local state until hook is updated)
+  const [juliaTrainingStatus, setJuliaTrainingStatus] = React.useState<'none' | 'uploaded' | 'processing' | 'active'>('none');
+
+  const handleJuliaTrainingDataUploaded = (trainingData: any) => {
+    console.log('Julia training data uploaded:', trainingData);
+    setJuliaTrainingStatus('active');
+    // Here you would integrate with your AI system
+    // For now, just show that it's active
+  };
 
   const availableStaffForModal = STAFF_MEMBERS.filter(s => !s.isSick);
 
@@ -73,7 +85,18 @@ export default function ORNexusPlannerPage() {
 
           {/* Right column for AI Assistant Panels */}
           <div className="lg:col-span-1 space-y-6">
-            {/* New Recommendations Section */}
+            {/* NEW: Julia Training Panel */}
+            <div>
+              <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
+                <Info className="mr-2 h-5 w-5" /> Julia's KI Training
+              </h2>
+              <JuliaTrainingPanel
+                onTrainingDataUploaded={handleJuliaTrainingDataUploaded}
+                currentTrainingStatus={juliaTrainingStatus}
+              />
+            </div>
+
+            {/* Existing Recommendations Section */}
             <div>
               <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
                 <Info className="mr-2 h-5 w-5" /> GPT-4 Empfehlungen für Julia
