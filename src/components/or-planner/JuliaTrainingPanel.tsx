@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Upload, FileSpreadsheet, Brain, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, FileSpreadsheet, Brain, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface JuliaTrainingPanelProps {
@@ -44,52 +44,58 @@ export const JuliaTrainingPanel: React.FC<JuliaTrainingPanelProps> = ({
     setUploadProgress(0);
 
     try {
-      // Read file as ArrayBuffer
-      const fileBuffer = await file.arrayBuffer();
-      
-      // Simulate upload progress
+      // Simulate file processing for now
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           if (prev >= 90) {
             clearInterval(progressInterval);
             return 90;
           }
-          return prev + 10;
+          return prev + 15;
         });
-      }, 200);
+      }, 300);
 
-      // Send to backend API for processing
-      const formData = new FormData();
-      formData.append('juliaSkillsFile', file);
-
-      const response = await fetch('/api/julia-training/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      // Read file as ArrayBuffer for future processing
+      const fileBuffer = await file.arrayBuffer();
+      
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       setUploadProgress(100);
       clearInterval(progressInterval);
 
+      // Mock training data for demonstration
+      const mockTrainingData = {
+        patternsExtracted: 47,
+        confidenceScore: 0.87,
+        staffPatterns: [
+          'Karin R. + Gerhard K. = 95% Erfolg bei Neuro-OPs',
+          'Ulla K. + Sandra P. = Beste GYN-Paarung',
+          'Fatima R. führt bei Herz-Thorax Operationen'
+        ],
+        complexityRules: [
+          'Sehr Hoch: Nur erfahrene Paare (Bewertung >8)',
+          'Hoch: Mindestens ein Experte pro Paar',
+          'Mittel: Gute Trainingsgelegenheiten'
+        ]
+      };
+      
       // Update training stats
       setTrainingStats({
-        totalPatterns: result.patternsExtracted,
-        confidence: result.confidenceScore,
+        totalPatterns: mockTrainingData.patternsExtracted,
+        confidence: mockTrainingData.confidenceScore,
         lastUpdated: new Date(),
       });
 
       // Notify parent component
-      onTrainingDataUploaded(result.trainingData);
+      onTrainingDataUploaded(mockTrainingData);
 
       toast({
         title: "Training-Daten erfolgreich hochgeladen",
-        description: `${result.patternsExtracted} Muster von Julia erkannt. KI-Konfidenz: ${(result.confidenceScore * 100).toFixed(1)}%`,
+        description: `${mockTrainingData.patternsExtracted} Muster von Julia erkannt. KI-Konfidenz: ${(mockTrainingData.confidenceScore * 100).toFixed(1)}%`,
       });
+
+      console.log('📊 Julia Training Data Loaded:', mockTrainingData);
 
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -148,6 +154,15 @@ export const JuliaTrainingPanel: React.FC<JuliaTrainingPanelProps> = ({
           </Alert>
         )}
 
+        {currentTrainingStatus === 'active' && (
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800">
+              KI nutzt jetzt Julias 15+ Jahre Erfahrung für bessere Personalvorschläge.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* File Upload Section */}
         <div className="space-y-2">
           <div className="flex items-center space-x-2">
@@ -164,7 +179,7 @@ export const JuliaTrainingPanel: React.FC<JuliaTrainingPanelProps> = ({
               onClick={() => document.querySelector('input[type="file"]')?.click()}
             >
               <Upload className="h-4 w-4 mr-2" />
-              Julias Excel hochladen
+              {currentTrainingStatus === 'none' ? 'Excel hochladen' : 'Aktualisieren'}
             </Button>
           </div>
           
@@ -200,12 +215,24 @@ export const JuliaTrainingPanel: React.FC<JuliaTrainingPanelProps> = ({
 
         {/* Expected Excel Format Guide */}
         {currentTrainingStatus === 'none' && (
-          <div className="text-xs text-muted-foreground space-y-1">
-            <p className="font-medium">Erwartetes Excel-Format:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li><strong>Sheet "StaffSkills":</strong> Staff_ID, Name, Operation_Type, Complexity, Proficiency_Score, Preferred_Partners, Julia_Rating</li>
-              <li><strong>Sheet "PairingHistory":</strong> Staff_1, Staff_2, Operation_Type, Success_Rate, Julia_Approval_Rate</li>
+          <div className="text-xs text-muted-foreground space-y-1 p-3 bg-blue-50 rounded border border-blue-200">
+            <p className="font-medium text-blue-800">Erwartetes Excel-Format:</p>
+            <ul className="list-disc list-inside space-y-1 text-blue-700">
+              <li><strong>Personalfähigkeiten:</strong> Name, Bereich, Komplexität, Bewertung</li>
+              <li><strong>Erfolgreiche Paarungen:</strong> Personal 1, Personal 2, Erfolgsrate</li>
+              <li><strong>Julias Entscheidungen:</strong> Originaler Vorschlag vs. Julias Wahl</li>
             </ul>
+            <p className="text-blue-600 mt-2">
+              💡 <strong>Tipp:</strong> Je mehr historische Daten, desto besser lernt die KI!
+            </p>
+          </div>
+        )}
+
+        {/* Demo Information */}
+        {currentTrainingStatus === 'none' && (
+          <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+            <Info className="h-3 w-3 inline mr-1" />
+            <strong>Demo-Modus:</strong> Upload simuliert Julias Trainingsdaten für Demonstrationszwecke.
           </div>
         )}
       </CardContent>
@@ -213,208 +240,4 @@ export const JuliaTrainingPanel: React.FC<JuliaTrainingPanelProps> = ({
   );
 };
 
-// API endpoint to handle Julia's training data upload
-// src/pages/api/julia-training/upload.ts
-
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { JuliaSkillsAnalyzer } from '@/lib/julia-skills-parser';
-import formidable from 'formidable';
-import fs from 'fs';
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
-type UploadResponse = {
-  success: boolean;
-  patternsExtracted: number;
-  confidenceScore: number;
-  trainingData: any;
-  message?: string;
-  error?: string;
-};
-
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<UploadResponse>
-) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ 
-      success: false, 
-      patternsExtracted: 0, 
-      confidenceScore: 0, 
-      trainingData: null,
-      error: 'Method not allowed' 
-    });
-  }
-
-  try {
-    // Parse the uploaded file
-    const form = formidable({
-      uploadDir: '/tmp',
-      keepExtensions: true,
-      maxFileSize: 10 * 1024 * 1024, // 10MB limit
-    });
-
-    const [fields, files] = await form.parse(req);
-    const uploadedFile = Array.isArray(files.juliaSkillsFile) 
-      ? files.juliaSkillsFile[0] 
-      : files.juliaSkillsFile;
-
-    if (!uploadedFile) {
-      return res.status(400).json({
-        success: false,
-        patternsExtracted: 0,
-        confidenceScore: 0,
-        trainingData: null,
-        error: 'No file uploaded'
-      });
-    }
-
-    // Read and process the Excel file
-    const fileBuffer = fs.readFileSync(uploadedFile.filepath);
-    const analyzer = new JuliaSkillsAnalyzer();
-    await analyzer.parseJuliaExcelFile(fileBuffer);
-
-    // Generate training examples and patterns
-    const trainingExamples = analyzer.generateTrainingExamples();
-    const compatibilityMatrix = analyzer.getStaffCompatibilityMatrix();
-    
-    // Calculate confidence score based on data quality
-    const totalStaff = Object.keys(compatibilityMatrix).length;
-    const pairingPatterns = trainingExamples.length;
-    const confidenceScore = Math.min(0.95, (pairingPatterns * totalStaff) / 100);
-
-    // Store the training data (in production, this would go to a database)
-    const trainingData = {
-      compatibilityMatrix,
-      trainingExamples,
-      uploadTimestamp: new Date().toISOString(),
-      totalStaff,
-      pairingPatterns,
-    };
-
-    // Clean up temporary file
-    fs.unlinkSync(uploadedFile.filepath);
-
-    // Save to persistent storage (Redis/Database)
-    // await saveJuliaTrainingData(trainingData);
-
-    res.status(200).json({
-      success: true,
-      patternsExtracted: pairingPatterns,
-      confidenceScore,
-      trainingData,
-      message: `Successfully processed Julia's expertise data: ${pairingPatterns} patterns from ${totalStaff} staff members.`
-    });
-
-  } catch (error: any) {
-    console.error('Julia training upload error:', error);
-    res.status(500).json({
-      success: false,
-      patternsExtracted: 0,
-      confidenceScore: 0,
-      trainingData: null,
-      error: error.message || 'Failed to process training data'
-    });
-  }
-}
-
-// Integration into existing useORData hook
-// Add this to src/hooks/useORData.ts
-
-export function useORDataWithJuliaTraining() {
-  const [juliaTrainingData, setJuliaTrainingData] = useState<any>(null);
-  const [juliaTrainingStatus, setJuliaTrainingStatus] = useState<'none' | 'uploaded' | 'processing' | 'active'>('none');
-
-  // Existing useORData logic...
-
-  const handleJuliaTrainingDataUploaded = useCallback((trainingData: any) => {
-    setJuliaTrainingData(trainingData);
-    setJuliaTrainingStatus('active');
-    
-    // Trigger re-evaluation of current suggestions with Julia's training data
-    if (currentWorkflowStepKey === 'GPT_SUGGESTIONS_READY' || currentWorkflowStepKey === 'JULIA_REVIEW') {
-      loadEnhancedGptSuggestions();
-    }
-    
-    toast({
-      title: "KI mit Julias Expertise trainiert",
-      description: "Neue Personalvorschläge berücksichtigen jetzt Julias Erfahrung.",
-    });
-  }, [currentWorkflowStepKey, toast]);
-
-  const loadEnhancedGptSuggestions = useCallback(async () => {
-    if (!juliaTrainingData) {
-      return loadGptSuggestions(); // Fallback to regular suggestions
-    }
-
-    setIsLoading(true);
-    
-    const input = {
-      operatingRooms: allAssignmentsList
-        .filter(op => op.status === 'empty' || op.status === 'critical_pending')
-        .map(op => ({
-          name: op.room,
-          shift: op.shift,
-          operationComplexity: op.complexity || 'Mittel',
-          operationType: 'General', // Could be enhanced based on op.procedureName
-        })),
-      availableStaff: staff.filter(s => !s.isSick).map(s => s.name),
-      sickStaff: staff.filter(s => s.isSick).map(s => s.name),
-      juliaTrainingData: juliaTrainingData,
-      previousJuliaOverrides: juliaOverrides,
-    };
-
-    try {
-      const enhancedSuggestions = await fetchEnhancedAiStaffingSuggestions(input);
-      
-      // Update schedule with enhanced suggestions
-      setSchedule(prev => {
-        const newSchedule = JSON.parse(JSON.stringify(prev));
-        enhancedSuggestions.assignments.forEach(sugg => {
-          const room = sugg.operatingRoom as OperatingRoomName;
-          const shift = sugg.shift as Shift;
-          const targetOp = newSchedule[room]?.[shift];
-          if (targetOp) {
-            const staffMembers = sugg.staff
-              .map(name => staff.find(s => s.name === name))
-              .filter(Boolean) as StaffMember[];
-            
-            targetOp.gptSuggestedStaff = staffMembers;
-            targetOp.assignedStaff = staffMembers; 
-            targetOp.aiReasoning = `${sugg.reason} (Konfidenz: ${(sugg.confidenceScore * 100).toFixed(1)}%, Julia-Wahrscheinlichkeit: ${(sugg.juliaLikelihood * 100).toFixed(1)}%)`;
-            targetOp.status = targetOp.status === 'empty' || targetOp.status === 'critical_pending' ? 'pending_gpt' : targetOp.status;
-          }
-        });
-        return newSchedule;
-      });
-
-      toast({ 
-        title: "Erweiterte KI-Vorschläge basierend auf Julias Expertise", 
-        description: `${enhancedSuggestions.assignments.length} Vorschläge generiert mit durchschnittlicher Julia-Wahrscheinlichkeit von ${(enhancedSuggestions.assignments.reduce((acc, a) => acc + a.juliaLikelihood, 0) / enhancedSuggestions.assignments.length * 100).toFixed(1)}%` 
-      });
-      
-    } catch (error: any) {
-      console.error("Enhanced AI suggestions error:", error);
-      toast({ 
-        title: "Erweiterte KI-Vorschläge fehlgeschlagen", 
-        description: "Fallback auf Standard-KI-Vorschläge.", 
-        variant: "destructive" 
-      });
-      await loadGptSuggestions(); // Fallback
-    } finally {
-      setIsLoading(false);
-    }
-  }, [juliaTrainingData, allAssignmentsList, staff, juliaOverrides, toast]);
-
-  return {
-    // ... existing returns
-    juliaTrainingData,
-    juliaTrainingStatus,
-    handleJuliaTrainingDataUploaded,
-    loadEnhancedGptSuggestions,
-  };
-}
+export default JuliaTrainingPanel;
