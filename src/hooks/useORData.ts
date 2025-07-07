@@ -168,6 +168,30 @@ export function useORData() {
     }
   }, [allAssignmentsList, staff, toast, currentWorkflowStepKey, previousWorkflowStepKey, isLoading]);
 
+
+  // Add this to useORData.ts
+  useEffect(() => {
+    const loadJuliaData = async () => {
+      try {
+        const response = await fetch('/julia-real-data.xlsx');
+        const arrayBuffer = await response.arrayBuffer();
+        
+        const analyzer = new JuliaSkillsAnalyzer();
+        await analyzer.parseJuliaExcelFile(arrayBuffer);
+        
+        setJuliaTrainingData(analyzer.generateTrainingExamples());
+        setJuliaTrainingStatus('active');
+        
+        toast({ title: "Julia's Expertise Loaded!", description: "AI now uses Julia's knowledge" });
+      } catch (error) {
+        console.log('Could not load Julia data:', error);
+      }
+    };
+    
+    loadJuliaData();
+  }, []);
+
+
   useEffect(() => {
     if (currentWorkflowStepKey === 'PLAN_CREATED' && !isLoading) {
       loadGptSuggestions();
