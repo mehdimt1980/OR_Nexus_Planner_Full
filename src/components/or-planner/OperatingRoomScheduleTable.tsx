@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 import type { ORSchedule, OperationAssignment, OperatingRoomName, Shift } from '@/lib/or-planner-types';
-import { OPERATING_ROOMS, SHIFTS, SHIFT_TIMES } from '@/lib/or-planner-types';
+import { OPERATING_ROOMS, SHIFTS, SHIFT_TIMES, ROOM_DEPARTMENT_MAPPING, DEPARTMENT_SPECIALIZATIONS } from '@/lib/or-planner-types';
 import AssignmentCell from './AssignmentCell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
