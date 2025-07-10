@@ -94,7 +94,8 @@ export default function ORNexusPlannerPage() {
                 onImportSuccess={handleCSVImportSuccess}
                 isDisabled={currentWorkflowStepKey === 'PLAN_FINALIZED'}
               />
-            </div>  
+            </div>
+            
             {/* NEW: Julia Training Panel */}
             <div>
               <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
