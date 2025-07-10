@@ -83,9 +83,18 @@ export default function ORNexusPlannerPage() {
               onCellClick={(op) => setSelectedOperation(op)} 
             />
           </div>
-
           {/* Right column for AI Assistant Panels */}
           <div className="lg:col-span-1 space-y-6">
+            {/* CSV Import Panel */}
+            <div>
+              <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
+                <Info className="mr-2 h-5 w-5" /> OP-Plan Import
+              </h2>
+              <CSVImportPanel
+                onImportSuccess={handleCSVImportSuccess}
+                isDisabled={currentWorkflowStepKey === 'PLAN_FINALIZED'}
+              />
+            </div>  
             {/* NEW: Julia Training Panel */}
             <div>
               <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
