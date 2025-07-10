@@ -8,9 +8,109 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Papa from 'papaparse';
-import type { RealOPPlanRow, ImportedOperation } from '@/lib/real-op-plan-types';
-import { transformRealOPData } from '@/lib/real-op-plan-transformer';
+// Simple CSV parser to avoid external dependencies
+interface ParsedCSVRow {
+  Zeit: string;
+  'OP-Saal': string;
+  Eingriff: string;
+  'OP-Orgaeinheit': string;
+  '1.Operateur'?: string;
+  Anmerkung?: string;
+  Fallnummer?: string;
+  'OP-Status'?: string;
+}
+
+interface ImportedOperation {
+  id: string;
+  room: string;
+  scheduledTime: string;
+  procedureName: string;
+  department: string;
+  primarySurgeon: string;
+  complexity: 'Sehr Hoch' | 'Hoch' | 'Mittel' | 'Niedrig';
+  assignedStaff: any[];
+  status: 'empty' | 'pending_gpt' | 'final_approved';
+  notes?: string;
+  patientCase: string;
+  estimatedDuration: number;
+}
+
+// Simple CSV parser function
+function parseCSV(csvText: string): { data: ParsedCSVRow[], errors: string[] } {
+  const lines = csvText.split('\n').map(line => line.trim()).filter(line => line);
+  const errors: string[] = [];
+  
+  if (lines.length < 2) {
+    return { data: [], errors: ['CSV file must have at least a header and one data row'] };
+  }
+
+  // Parse header
+  const headerLine = lines[0];
+  const headers = headerLine.split(';').map(h => h.trim().replace(/^"|"$/g, ''));
+  
+  // Check for required headers
+  const requiredHeaders = ['Zeit', 'OP-Saal', 'Eingriff', 'OP-Orgaeinheit'];
+  const missingHeaders = requiredHeaders.filter(req => !headers.includes(req));
+  if (missingHeaders.length > 0) {
+    errors.push(`Missing required headers: ${missingHeaders.join(', ')}`);
+  }
+
+  // Parse data rows
+  const data: ParsedCSVRow[] = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const values = line.split(';').map(v => v.trim().replace(/^"|"$/g, ''));
+    
+    if (values.length !== headers.length) {
+      errors.push(`Row ${i + 1}: Expected ${headers.length} columns, got ${values.length}`);
+      continue;
+    }
+
+    const row: any = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] || '';
+    });
+
+    // Validate required fields
+    if (row.Zeit && row['OP-Saal'] && row.Eingriff && row['OP-Orgaeinheit']) {
+      data.push(row as ParsedCSVRow);
+    } else {
+      errors.push(`Row ${i + 1}: Missing required fields`);
+    }
+  }
+
+  return { data, errors };
+}
+
+// Transform CSV data to ImportedOperation
+function transformToOperation(row: ParsedCSVRow, index: number): ImportedOperation {
+  // Simple complexity inference
+  const inferComplexity = (procedure: string): 'Sehr Hoch' | 'Hoch' | 'Mittel' | 'Niedrig' => {
+    const lowerProc = procedure.toLowerCase();
+    if (lowerProc.includes('osteosynthese') || lowerProc.includes('thyreoidektomie')) return 'Sehr Hoch';
+    if (lowerProc.includes('cholezystektomie') || lowerProc.includes('hernie')) return 'Hoch';
+    if (lowerProc.includes('exzision') || lowerProc.includes('laparoskopie')) return 'Mittel';
+    return 'Niedrig';
+  };
+
+  const complexity = inferComplexity(row.Eingriff);
+  
+  return {
+    id: `${row['OP-Saal']}-${row.Zeit.replace(':', '')}-${index}`,
+    room: row['OP-Saal'],
+    scheduledTime: row.Zeit,
+    procedureName: row.Eingriff,
+    department: row['OP-Orgaeinheit'],
+    primarySurgeon: row['1.Operateur'] || 'Unbekannt',
+    complexity,
+    assignedStaff: [],
+    status: 'empty',
+    notes: row.Anmerkung || '',
+    patientCase: row.Fallnummer || '',
+    estimatedDuration: complexity === 'Sehr Hoch' ? 180 : complexity === 'Hoch' ? 120 : complexity === 'Mittel' ? 90 : 60
+  };
+}
 
 interface CSVImportPanelProps {
   onImportSuccess: (operations: ImportedOperation[]) => void;
@@ -62,13 +162,7 @@ export const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
       // Read and parse CSV
       const csvText = await file.text();
       
-      const parseResult = Papa.parse<RealOPPlanRow>(csvText, {
-        header: true,
-        delimiter: ';',
-        skipEmptyLines: true,
-        dynamicTyping: false, // Keep as strings for better control
-        encoding: 'utf-8'
-      });
+      const parseResult = parseCSV(csvText);
 
       clearInterval(progressInterval);
       setImportProgress(95);
@@ -79,14 +173,12 @@ export const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
 
       // Transform data
       const operations: ImportedOperation[] = [];
-      const errors: string[] = [];
+      const errors: string[] = [...parseResult.errors];
 
       parseResult.data.forEach((row, index) => {
         try {
-          if (row.Zeit && row['OP-Saal'] && row.Eingriff) {
-            const operation = transformRealOPData(row, index);
-            operations.push(operation);
-          }
+          const operation = transformToOperation(row, index);
+          operations.push(operation);
         } catch (error: any) {
           errors.push(`Row ${index + 1}: ${error.message}`);
         }
@@ -95,7 +187,7 @@ export const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
       setImportProgress(100);
       
       const results = {
-        total: parseResult.data.length,
+        total: parseResult.data.length + errors.length, // Total attempted rows
         successful: operations.length,
         errors
       };
