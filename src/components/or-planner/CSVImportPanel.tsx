@@ -35,7 +35,7 @@ interface ImportedOperation {
   estimatedDuration: number;
 }
 
-// Simple CSV parser function
+// Simple CSV parser function - improved for robustness
 function parseCSV(csvText: string): { data: ParsedCSVRow[], errors: string[] } {
   const lines = csvText.split('\n').map(line => line.trim()).filter(line => line);
   const errors: string[] = [];
@@ -62,9 +62,18 @@ function parseCSV(csvText: string): { data: ParsedCSVRow[], errors: string[] } {
     const line = lines[i];
     const values = line.split(';').map(v => v.trim().replace(/^"|"$/g, ''));
     
-    if (values.length !== headers.length) {
-      errors.push(`Row ${i + 1}: Expected ${headers.length} columns, got ${values.length}`);
-      continue;
+    // More flexible column handling
+    if (values.length < headers.length) {
+      // Pad with empty strings if too few columns
+      while (values.length < headers.length) {
+        values.push('');
+      }
+      errors.push(`Row ${i + 1}: Had ${values.length} columns, padded to ${headers.length}`);
+    } else if (values.length > headers.length) {
+      // Truncate if too many columns (common with trailing semicolons)
+      const extraCols = values.length - headers.length;
+      values.splice(headers.length);
+      errors.push(`Row ${i + 1}: Had ${values.length + extraCols} columns, truncated to ${headers.length}`);
     }
 
     const row: any = {};
@@ -76,7 +85,7 @@ function parseCSV(csvText: string): { data: ParsedCSVRow[], errors: string[] } {
     if (row.Zeit && row['OP-Saal'] && row.Eingriff && row['OP-Orgaeinheit']) {
       data.push(row as ParsedCSVRow);
     } else {
-      errors.push(`Row ${i + 1}: Missing required fields`);
+      errors.push(`Row ${i + 1}: Missing required fields (Zeit: "${row.Zeit}", OP-Saal: "${row['OP-Saal']}", Eingriff: "${row.Eingriff}", OP-Orgaeinheit: "${row['OP-Orgaeinheit']}")`);
     }
   }
 
