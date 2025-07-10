@@ -18,8 +18,71 @@ export const SHIFT_TIMES: Record<Shift, string> = {
 export type OperationComplexity = 'Sehr Hoch' | 'Hoch' | 'Mittel' | 'Niedrig';
 export const COMPLEXITY_LEVELS: OperationComplexity[] = ['Sehr Hoch', 'Hoch', 'Mittel', 'Niedrig'];
 
-export type OperatingRoomName = 'UCH' | 'EPZ/HNO' | 'ACH' | 'GYN' | 'GCH' | 'URO' | 'DaVinci' | 'PCH';
+export type OperatingRoomName = 'UCH' | 'EPZ/HNO' | 'ACH' | 'GYN' | 'GCH' | 'URO' | 'DaVinci' | 'PCH' | 'SAAL 1' | 'SAAL 2' | 'SAAL 3' | 'SAAL 4' | 'SAAL 5' | 'SAAL 6' | 'SAAL 7' | 'SAAL 8';
 export const OPERATING_ROOMS: OperatingRoomName[] = ['UCH', 'EPZ/HNO', 'ACH', 'GYN', 'GCH', 'URO', 'DaVinci', 'PCH'];
+export const REAL_OPERATING_ROOMS: OperatingRoomName[] = ['SAAL 1', 'SAAL 2', 'SAAL 3', 'SAAL 4', 'SAAL 5', 'SAAL 6', 'SAAL 7', 'SAAL 8'];
+
+export type DepartmentName = 'UCH' | 'ACH' | 'GCH' | 'GYN' | 'URO' | 'PCH' | 'EPZ/HNO';
+export const DEPARTMENTS: DepartmentName[] = ['UCH', 'ACH', 'GCH', 'GYN', 'URO', 'PCH', 'EPZ/HNO'];
+
+// Real hospital room-department mapping based on typical usage
+export const ROOM_DEPARTMENT_MAPPING: Record<string, DepartmentName> = {
+  'SAAL 1': 'UCH',
+  'SAAL 2': 'GCH', 
+  'SAAL 3': 'ACH',
+  'SAAL 4': 'GYN',
+  'SAAL 5': 'GCH',
+  'SAAL 6': 'URO',
+  'SAAL 7': 'ACH',
+  'SAAL 8': 'PCH',
+  // Legacy demo rooms
+  'UCH': 'UCH',
+  'EPZ/HNO': 'EPZ/HNO',
+  'ACH': 'ACH',
+  'GYN': 'GYN',
+  'GCH': 'GCH',
+  'URO': 'URO',
+  'DaVinci': 'URO',
+  'PCH': 'PCH'
+};
+
+export const DEPARTMENT_SPECIALIZATIONS: Record<DepartmentName, { name: string; description: string; complexities: OperationComplexity[] }> = {
+  'UCH': {
+    name: 'Unfallchirurgie',
+    description: 'Trauma surgery, orthopedics, fractures',
+    complexities: ['Sehr Hoch', 'Hoch', 'Mittel']
+  },
+  'ACH': {
+    name: 'Allgemeine Chirurgie', 
+    description: 'General surgery, abdominal procedures',
+    complexities: ['Hoch', 'Mittel', 'Niedrig']
+  },
+  'GCH': {
+    name: 'Gefäßchirurgie',
+    description: 'Vascular surgery, vessel procedures',
+    complexities: ['Sehr Hoch', 'Hoch', 'Mittel']
+  },
+  'GYN': {
+    name: 'Gynäkologie',
+    description: 'Gynecology, breast surgery',
+    complexities: ['Hoch', 'Mittel', 'Niedrig']
+  },
+  'URO': {
+    name: 'Urologie',
+    description: 'Urology, kidney procedures',
+    complexities: ['Sehr Hoch', 'Hoch', 'Mittel']
+  },
+  'PCH': {
+    name: 'Plastische Chirurgie',
+    description: 'Plastic surgery, reconstructive procedures',
+    complexities: ['Mittel', 'Niedrig']
+  },
+  'EPZ/HNO': {
+    name: 'HNO/Endoskopie',
+    description: 'ENT surgery, endoscopic procedures',
+    complexities: ['Mittel', 'Niedrig']
+  }
+};
 
 export type AssignmentStatus = 'pending_gpt' | 'approved_julia' | 'modified_julia' | 'final_approved' | 'empty' | 'critical_pending';
 
