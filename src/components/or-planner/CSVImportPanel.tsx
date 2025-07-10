@@ -250,4 +250,5 @@ export const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
   );
 };
 
+export { CSVImportPanel };
 export default CSVImportPanel;
