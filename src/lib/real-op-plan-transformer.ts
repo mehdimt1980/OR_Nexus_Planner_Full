@@ -1,7 +1,8 @@
 // src/lib/real-op-plan-transformer.ts
 
 import type { RealOPPlanRow, ImportedOperation, COMPLEXITY_KEYWORDS, REAL_STATUS_MAPPING } from './real-op-plan-types';
-import type { OperationComplexity, AssignmentStatus } from './or-planner-types';
+import type { OperationComplexity, AssignmentStatus, OperatingRoomName } from './or-planner-types';
+import { ROOM_DEPARTMENT_MAPPING, DEPARTMENT_SPECIALIZATIONS } from './or-planner-types';
 
 const COMPLEXITY_KEYWORDS_MAP = {
   'Sehr Hoch': ['Osteosynthese', 'Instrumentierung', 'Thyreoidektomie', 'Acetabulumfraktur', 'Nephrektomie'],
@@ -76,6 +77,34 @@ function cleanSurgeonName(surgeon: string): string {
   return surgeon.replace(/^"|"$/g, '').trim();
 }
 
+function validateRoomName(roomName: string): OperatingRoomName {
+  // Ensure the room name is a valid OperatingRoomName
+  const validRooms: OperatingRoomName[] = [
+    'UCH', 'EPZ/HNO', 'ACH', 'GYN', 'GCH', 'URO', 'DaVinci', 'PCH',
+    'SAAL 1', 'SAAL 2', 'SAAL 3', 'SAAL 4', 'SAAL 5', 'SAAL 6', 'SAAL 7', 'SAAL 8'
+  ];
+  
+  if (validRooms.includes(roomName as OperatingRoomName)) {
+    return roomName as OperatingRoomName;
+  }
+  
+  // Try to map similar room names
+  const upperRoom = roomName.toUpperCase();
+  if (upperRoom.includes('SAAL')) {
+    const match = upperRoom.match(/SAAL\s*(\d+)/);
+    if (match) {
+      const saalName = `SAAL ${match[1]}` as OperatingRoomName;
+      if (validRooms.includes(saalName)) {
+        return saalName;
+      }
+    }
+  }
+  
+  // Default to first available room if no match
+  console.warn(`Room name "${roomName}" not recognized, using SAAL 1`);
+  return 'SAAL 1';
+}
+
 export function transformRealOPData(csvRow: RealOPPlanRow, index: number): ImportedOperation {
   // Validate required fields
   if (!csvRow.Zeit) {
@@ -91,15 +120,20 @@ export function transformRealOPData(csvRow: RealOPPlanRow, index: number): Impor
     throw new Error(`Keine OP-Orgaeinheit angegeben`);
   }
 
+  const validatedRoom = validateRoomName(csvRow['OP-Saal']);
   const complexity = inferComplexityFromProcedure(csvRow.Eingriff);
   const estimatedDuration = estimateDurationFromComplexity(complexity, csvRow.Eingriff);
   
+  // Get department from room mapping or use the provided department
+  const mappedDepartment = ROOM_DEPARTMENT_MAPPING[validatedRoom];
+  const finalDepartment = mappedDepartment || csvRow['OP-Orgaeinheit'];
+  
   const operation: ImportedOperation = {
-    id: `${csvRow['OP-Saal']}-${csvRow.Zeit.replace(':', '')}-${index}`,
-    room: csvRow['OP-Saal'],
+    id: `${validatedRoom}-${csvRow.Zeit.replace(':', '')}-${index}`,
+    room: validatedRoom,
     scheduledTime: csvRow.Zeit,
     procedureName: csvRow.Eingriff,
-    department: csvRow['OP-Orgaeinheit'],
+    department: finalDepartment,
     primarySurgeon: cleanSurgeonName(csvRow['1.Operateur']),
     complexity,
     assignedStaff: [], // Will be populated by AI
@@ -149,4 +183,50 @@ export function extractMetadataFromImport(operations: ImportedOperation[]) {
   const timeSlots = [...new Set(operations.map(op => op.scheduledTime))].sort();
   
   return { rooms, departments, timeSlots };
+}
+
+// Helper function to detect time conflicts in operations
+export function detectTimeConflicts(operations: ImportedOperation[]): Array<{room: string, conflicts: Array<{op1: ImportedOperation, op2: ImportedOperation}>}> {
+  const conflicts: Array<{room: string, conflicts: Array<{op1: ImportedOperation, op2: ImportedOperation}>}> = [];
+  
+  // Group by room
+  const roomGroups = operations.reduce((groups, op) => {
+    if (!groups[op.room]) groups[op.room] = [];
+    groups[op.room].push(op);
+    return groups;
+  }, {} as Record<string, ImportedOperation[]>);
+  
+  Object.entries(roomGroups).forEach(([room, roomOps]) => {
+    const roomConflicts: Array<{op1: ImportedOperation, op2: ImportedOperation}> = [];
+    
+    for (let i = 0; i < roomOps.length - 1; i++) {
+      for (let j = i + 1; j < roomOps.length; j++) {
+        const op1 = roomOps[i];
+        const op2 = roomOps[j];
+        
+        if (op1.scheduledTime && op2.scheduledTime) {
+          const op1Start = timeToMinutes(op1.scheduledTime);
+          const op1End = op1Start + (op1.estimatedDuration || 60);
+          const op2Start = timeToMinutes(op2.scheduledTime);
+          const op2End = op2Start + (op2.estimatedDuration || 60);
+          
+          // Check for overlap
+          if (!(op1End <= op2Start || op2End <= op1Start)) {
+            roomConflicts.push({ op1, op2 });
+          }
+        }
+      }
+    }
+    
+    if (roomConflicts.length > 0) {
+      conflicts.push({ room, conflicts: roomConflicts });
+    }
+  });
+  
+  return conflicts;
+}
+
+function timeToMinutes(timeStr: string): number {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
 }
