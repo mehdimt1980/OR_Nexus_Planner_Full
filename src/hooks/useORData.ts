@@ -19,6 +19,7 @@ import type { SummarizeGptLearningInput } from '@/ai/flows/summarize-gpt-learnin
 import { useToast } from "@/hooks/use-toast";
 import type { CriticalSituationData, OptimizationSuggestionItem } from '@/components/or-planner/JuliaRecommendationsPanel';
 import type { LearningProgressItem } from '@/components/or-planner/AiAssistantPanel';
+import type { ImportedOperation } from '@/lib/real-op-plan-types';
 import { Brain, TrendingUp, Settings2 } from 'lucide-react';
 
 
