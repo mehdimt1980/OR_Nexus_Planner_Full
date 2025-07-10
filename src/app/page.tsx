@@ -1,4 +1,4 @@
-// src/app/page.tsx - Updated with Julia Training Panel
+// src/app/page.tsx - Updated with CSV Import Panel and Julia Training Panel
 
 "use client";
 import React from 'react';
@@ -9,14 +9,16 @@ import OperatingRoomScheduleTable from '@/components/or-planner/OperatingRoomSch
 import AiAssistantPanel from '@/components/or-planner/AiAssistantPanel';
 import JuliaRecommendationsPanel from '@/components/or-planner/JuliaRecommendationsPanel';
 import AssignmentModal from '@/components/or-planner/AssignmentModal';
-import JuliaTrainingPanel from '@/components/or-planner/JuliaTrainingPanel'; // Add this import
+import JuliaTrainingPanel from '@/components/or-planner/JuliaTrainingPanel';
 import { CSVImportPanel } from '@/components/or-planner/CSVImportPanel';
 import { useORData } from '@/hooks/useORData';
+import { useToast } from '@/hooks/use-toast';
 import { STAFF_MEMBERS } from '@/lib/or-planner-data';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Info } from 'lucide-react';
 
 export default function ORNexusPlannerPage() {
+  const { toast } = useToast();
   const {
     schedule,
     workflowSteps,
@@ -47,6 +49,16 @@ export default function ORNexusPlannerPage() {
     setJuliaTrainingStatus('active');
     // Here you would integrate with your AI system
     // For now, just show that it's active
+  };
+
+  const handleCSVImportSuccess = (operations: any[]) => {
+    console.log('CSV Import successful:', operations);
+    toast({
+      title: "CSV Import erfolgreich",
+      description: `${operations.length} Operationen aus CSV importiert. Diese können nun mit der KI geplant werden.`,
+    });
+    // Here you would integrate the imported operations with your schedule
+    // This would typically involve updating the schedule state with real operations
   };
 
   const availableStaffForModal = STAFF_MEMBERS.filter(s => !s.isSick);
@@ -83,6 +95,7 @@ export default function ORNexusPlannerPage() {
               onCellClick={(op) => setSelectedOperation(op)} 
             />
           </div>
+
           {/* Right column for AI Assistant Panels */}
           <div className="lg:col-span-1 space-y-6">
             {/* CSV Import Panel */}
@@ -95,8 +108,8 @@ export default function ORNexusPlannerPage() {
                 isDisabled={currentWorkflowStepKey === 'PLAN_FINALIZED'}
               />
             </div>
-            
-            {/* NEW: Julia Training Panel */}
+
+            {/* Julia Training Panel */}
             <div>
               <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
                 <Info className="mr-2 h-5 w-5" /> Julia's KI Training
