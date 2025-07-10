@@ -10,6 +10,7 @@ import AiAssistantPanel from '@/components/or-planner/AiAssistantPanel';
 import JuliaRecommendationsPanel from '@/components/or-planner/JuliaRecommendationsPanel';
 import AssignmentModal from '@/components/or-planner/AssignmentModal';
 import JuliaTrainingPanel from '@/components/or-planner/JuliaTrainingPanel'; // Add this import
+import CSVImportPanel from '@/components/or-planner/CSVImportPanel';
 import { useORData } from '@/hooks/useORData';
 import { STAFF_MEMBERS } from '@/lib/or-planner-data';
 import { Skeleton } from '@/components/ui/skeleton';
