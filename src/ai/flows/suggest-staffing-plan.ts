@@ -55,17 +55,74 @@ const prompt = ai.definePrompt({
   name: 'suggestStaffingPlanPrompt',
   input: {schema: SuggestStaffingPlanInputSchema},
   output: {schema: SuggestStaffingPlanOutputSchema},
-  prompt: `You are an expert OR manager tasked with creating an optimal staffing plan for operating rooms. You must assign exactly two staff members to each operating room.
+  prompt: `You are an expert OR manager at Klinikum Gütersloh tasked with creating an optimal staffing plan for operating rooms. You must assign exactly two nursing staff members to each operating room.
 
-  Consider the following operating rooms, their shifts, and the complexity of the operations:
+  DEPARTMENT SPECIALIZATIONS:
+  - UCH (Unfallchirurgie): Trauma surgery, orthopedics, fractures - requires high skill for complex procedures
+  - ACH (Allgemeine Chirurgie): General surgery, abdominal procedures - versatile surgical experience needed
+  - GCH (Gefäßchirurgie): Vascular surgery, vessel procedures - specialized vascular knowledge important
+  - GYN (Gynäkologie): Gynecology, breast surgery - women's health procedures
+  - URO (Urologie): Urology, kidney procedures - urological expertise preferred
+  - PCH (Plastische Chirurgie): Plastic surgery, reconstructive procedures - precision and aesthetic considerations
+  - EPZ/HNO: ENT surgery, endoscopic procedures - specialized equipment knowledge
+
+  OPERATING ROOMS AND THEIR REQUIREMENTS:
   {{#each operatingRooms}}
-  - Operating Room: {{name}}, Shift: {{shift}}, Complexity: {{operationComplexity}}
+  - Room: {{name}}, Shift: {{shift}}, Complexity: {{operationComplexity}}
+    {{#if (eq name "SAAL 1")}}Department: UCH (Unfallchirurgie){{/if}}
+    {{#if (eq name "SAAL 2")}}Department: GCH (Gefäßchirurgie){{/if}}
+    {{#if (eq name "SAAL 3")}}Department: ACH (Allgemeine Chirurgie){{/if}}
+    {{#if (eq name "SAAL 4")}}Department: GYN (Gynäkologie){{/if}}
+    {{#if (eq name "SAAL 5")}}Department: GCH (Gefäßchirurgie){{/if}}
+    {{#if (eq name "SAAL 6")}}Department: URO (Urologie){{/if}}
+    {{#if (eq name "SAAL 7")}}Department: ACH (Allgemeine Chirurgie){{/if}}
+    {{#if (eq name "SAAL 8")}}Department: PCH (Plastische Chirurgie){{/if}}
+    {{#if (eq name "UCH")}}Department: UCH (Unfallchirurgie){{/if}}
+    {{#if (eq name "ACH")}}Department: ACH (Allgemeine Chirurgie){{/if}}
+    {{#if (eq name "GYN")}}Department: GYN (Gynäkologie){{/if}}
+    {{#if (eq name "GCH")}}Department: GCH (Gefäßchirurgie){{/if}}
+    {{#if (eq name "URO")}}Department: URO (Urologie){{/if}}
+    {{#if (eq name "PCH")}}Department: PCH (Plastische Chirurgie){{/if}}
+    {{#if (eq name "DaVinci")}}Department: URO (Urologie) - Robotic Surgery{{/if}}
+    {{#if (eq name "EPZ/HNO")}}Department: EPZ/HNO{{/if}}
   {{/each}}
 
-  Available Staff: {{#each availableStaff}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
-  Sick Staff: {{#each sickStaff}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
+  AVAILABLE NURSING STAFF: {{#each availableStaff}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
+  SICK/UNAVAILABLE STAFF: {{#each sickStaff}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
 
-  Based on this information, generate a staffing plan that assigns exactly two staff members to each operating room. Maximize efficiency and resource utilization. Take into account staff availability, skills (assume general skills unless specified otherwise by complexity), and operation complexity. Provide clear reasons for each assignment pairing. For example, you might pair an experienced staff member with a less experienced one, or two staff members whose skills complement each other for a complex procedure.
+  STAFFING GUIDELINES:
+  - Each OR requires exactly TWO nursing staff members
+  - Consider department specialization when possible (staff with relevant skills)
+  - Balance workload across available staff
+  - For "Sehr Hoch" complexity: Pair experienced staff or one expert with one competent nurse
+  - For "Hoch" complexity: At least one experienced nurse required
+  - For "Mittel/Niedrig" complexity: Can use less experienced staff or training opportunities
+  - Avoid overloading any single staff member with multiple high-complexity assignments
+
+  STAFF SKILL REFERENCES:
+  - Karin R.: General, DaVinci (robotic surgery), URO
+  - Fatima R.: General, GCH (Vascular), UCH (Trauma)
+  - Gerhard K.: General, UCH (Trauma), ACH (General Surgery)
+  - Ulla K.: General, DaVinci, EPZ/HNO, URO
+  - Sandra P.: General, GYN (Gynecology)
+  - Jürgen S.: General, URO (Urology)
+  - Anja M.: General, PCH (Plastic Surgery)
+  - Sabine W.: General, EPZ/HNO
+  - Michael B.: General, ACH (General Surgery)
+  - Thomas L.: General, ACH (General Surgery)
+  - Marion K.: General, GCH (Vascular Surgery)
+  - Petra H.: General, GYN, PCH
+
+  DEPARTMENT PREFERRED STAFF:
+  - UCH (Trauma): Fatima R., Gerhard K.
+  - ACH (General Surgery): Gerhard K., Michael B., Thomas L.
+  - GCH (Vascular): Fatima R., Marion K.
+  - GYN (Gynecology): Sandra P., Petra H.
+  - URO (Urology): Karin R., Ulla K., Jürgen S.
+  - PCH (Plastic Surgery): Anja M., Petra H.
+  - EPZ/HNO: Ulla K., Sabine W.
+
+  Return a staffing plan that optimizes patient safety, staff expertise, and workload distribution.
 
   Return the staffing plan in the following JSON format:
   { "assignments": [ { "operatingRoom": "string", "shift": "string", "staff": ["string", "string"], "reason": "string" } ] }`,
