@@ -249,6 +249,3 @@ export const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
     </Card>
   );
 };
-
-export { CSVImportPanel };
-export default CSVImportPanel;
