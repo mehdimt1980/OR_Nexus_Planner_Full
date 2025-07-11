@@ -93,12 +93,11 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   );
 };
 
-// Default icons if needed elsewhere
-AiAssistantPanel.defaultLearningIcons = {
+// Default icons if needed elsewhere - exported as separate constant
+export const defaultLearningIcons = {
   Learned: Brain,
   Improvement: ImprovementIcon,
   NextOptimization: NextOptimizationIcon,
 };
-
 
 export default AiAssistantPanel;
