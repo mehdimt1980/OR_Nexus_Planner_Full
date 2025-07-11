@@ -112,39 +112,49 @@ export function useORData() {
     });
   }, [schedule]);
 
-  // Enhanced CSV import with comprehensive validation
-  const importCSVData = useCallback(async (operations: OperationAssignment[], csvData?: any[]) => {
-    setImportProgress({
-      isImporting: true,
-      currentStep: 'Validierung startet...',
-      progress: 0,
-      errors: []
-    });
+  // Update the importCSVData function parameter types
+const importCSVData = useCallback(async (operations: OperationAssignment[], csvData?: any[]) => {
+  setImportProgress({
+    isImporting: true,
+    currentStep: 'Validierung startet...',
+    progress: 0,
+    errors: []
+  });
 
-    try {
-      // Create backup for rollback
-      setScheduleBackup(JSON.parse(JSON.stringify(schedule)));
+  try {
+    // Create backup for rollback
+    setScheduleBackup(JSON.parse(JSON.stringify(schedule)));
 
-      // Step 1: Comprehensive validation (20% progress)
-      setImportProgress(prev => ({
-        ...prev,
-        currentStep: 'Validiere CSV-Struktur und Daten...',
-        progress: 20
-      }));
+    // Step 1: Comprehensive validation (20% progress)
+    setImportProgress(prev => ({
+      ...prev,
+      currentStep: 'Validiere CSV-Struktur und Daten...',
+      progress: 20
+    }));
 
-      let validationResult;
-      if (csvData) {
-        validationResult = validateCompleteImport(csvData, operations);
-      } else {
-        // If no CSV data provided, perform basic operation validation
-        validationResult = {
-          structureValidation: { isValid: true, errors: [], warnings: [], summary: { totalRows: operations.length, validRows: operations.length, errorRows: 0, warningRows: 0 } },
-          operationValidation: [],
-          timeConflicts: [],
-          roomValidation: [],
-          overallValid: true
-        };
-      }
+    let validationResult;
+    if (csvData && csvData.length > 0) {
+      validationResult = validateCompleteImport(csvData, operations);
+    } else {
+      // If no CSV data provided, perform basic operation validation
+      validationResult = {
+        structureValidation: { 
+          isValid: true, 
+          errors: [], 
+          warnings: [], 
+          summary: { 
+            totalRows: operations.length, 
+            validRows: operations.length, 
+            errorRows: 0, 
+            warningRows: 0 
+          } 
+        },
+        operationValidation: [],
+        timeConflicts: [],
+        roomValidation: [],
+        overallValid: true
+      };
+    }
 
       // Step 2: Handle validation results (40% progress)
       setImportProgress(prev => ({
@@ -292,17 +302,17 @@ export function useORData() {
         progress: 0,
         errors: [error instanceof Error ? error.message : 'Unbekannter Fehler']
       });
-
+  
       toast({
         title: "Import-Fehler",
         description: `Ein unerwarteter Fehler ist aufgetreten: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
         variant: "destructive"
       });
-
+  
       // Trigger rollback
       rollbackImport();
     }
-  }, [schedule, toast]);
+  }, [schedule, toast, rollbackImport]); // Add missing dependencies
 
   // Rollback functionality
   const rollbackImport = useCallback(() => {
