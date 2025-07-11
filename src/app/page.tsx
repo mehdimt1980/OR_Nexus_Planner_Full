@@ -1,5 +1,6 @@
+
 "use client";
-import React, { useState } from 'react';
+import React from 'react';
 import Header from '@/components/or-planner/Header';
 import WorkflowStatusIndicator from '@/components/or-planner/WorkflowStatusIndicator';
 import DashboardStats from '@/components/or-planner/DashboardStats';
@@ -7,13 +8,10 @@ import OperatingRoomScheduleTable from '@/components/or-planner/OperatingRoomSch
 import AiAssistantPanel from '@/components/or-planner/AiAssistantPanel';
 import JuliaRecommendationsPanel from '@/components/or-planner/JuliaRecommendationsPanel';
 import AssignmentModal from '@/components/or-planner/AssignmentModal';
-import CSVImportPanel from '@/components/or-planner/CSVImportPanel';
 import { useORData } from '@/hooks/useORData';
 import { STAFF_MEMBERS } from '@/lib/or-planner-data';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Info, Upload, Download } from 'lucide-react';
+import { Info } from 'lucide-react';
 
 export default function ORNexusPlannerPage() {
   const {
@@ -29,7 +27,6 @@ export default function ORNexusPlannerPage() {
     handleModify,
     handleGptOptimize,
     handleFinalizePlan,
-    handleCSVImport, // Add this function
     juliaProgress,
     criticalAlertsCount,
     juliaModificationsCount,
@@ -38,8 +35,6 @@ export default function ORNexusPlannerPage() {
     handleExtendStaff,
     handleRescheduleStaff,
   } = useORData();
-
-  const [showImportDialog, setShowImportDialog] = useState(false);
 
   const availableStaffForModal = STAFF_MEMBERS.filter(s => !s.isSick);
 
@@ -61,38 +56,6 @@ export default function ORNexusPlannerPage() {
       <Header />
       <main className="flex-grow container mx-auto px-2 py-4 sm:px-4 sm:py-6 space-y-4 sm:space-y-6">
         <WorkflowStatusIndicator steps={workflowSteps} />
-        
-        {/* Import/Export Actions */}
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-foreground">OP-Personalplanung</h1>
-          <div className="flex space-x-2">
-            <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="flex items-center space-x-2">
-                  <Upload className="h-4 w-4" />
-                  <span>CSV Import</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>OP-Plan aus CSV importieren</DialogTitle>
-                </DialogHeader>
-                <CSVImportPanel 
-                  onImport={(operations) => {
-                    handleCSVImport(operations);
-                    setShowImportDialog(false);
-                  }}
-                  currentDate={new Date().toISOString().split('T')[0]}
-                />
-              </DialogContent>
-            </Dialog>
-            
-            <Button variant="outline" className="flex items-center space-x-2">
-              <Download className="h-4 w-4" />
-              <span>Export</span>
-            </Button>
-          </div>
-        </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Left/Main column for Schedule and Stats */}
