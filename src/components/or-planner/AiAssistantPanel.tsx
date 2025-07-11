@@ -1,11 +1,10 @@
-
 "use client";
 import React from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Lightbulb, Sparkles, Save, Brain, TrendingUp as ImprovementIcon, Settings2 as NextOptimizationIcon } from 'lucide-react';
-import type { Icon as LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { WorkflowStepKey } from '@/lib/or-planner-types';
 
 export type LearningProgressItem = {
