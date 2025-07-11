@@ -281,7 +281,7 @@ export function useORData() {
   /**
    * Calculate approval status breakdown
    */
-  const calculateApprovalStatus = useCallback(): Record<string, number> => {
+  const calculateApprovalStatus = useCallback((): Record<string, number> => {
     const statusBreakdown: Record<string, number> = {};
     allAssignmentsList.forEach(op => {
       statusBreakdown[op.status] = (statusBreakdown[op.status] || 0) + 1;
