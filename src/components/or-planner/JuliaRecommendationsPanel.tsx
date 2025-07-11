@@ -1,10 +1,9 @@
-
 "use client";
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Lightbulb, CheckCircle, TrendingUp, BarChart2, RefreshCw, Users, Zap, Siren } from 'lucide-react';
-import type { Icon as LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 export type CriticalSituationData = {
   title: string;
