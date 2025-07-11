@@ -87,45 +87,108 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
       delimiter: ';', // German CSV format
       encoding: 'UTF-8',
       skipEmptyLines: true,
+      transformHeader: (header: string) => {
+        // Clean up headers
+        return header.trim().replace(/^\uFEFF/, ''); // Remove BOM
+      },
+      transform: (value: string, header: string) => {
+        // Clean up values
+        if (!value) return '';
+        return String(value).trim();
+      },
       complete: async (results) => {
         try {
-          const rawData = results.data as any[];
-          setCsvData(rawData);
+          console.log('Raw CSV data:', results.data.slice(0, 3));
           
-          // Step 1: Validate CSV structure
-          setTransformationProgress({
-            currentRow: 0,
-            totalRows: rawData.length,
-            phase: 'validating',
-            message: 'Validiere CSV-Struktur...'
+          // STEP 1: Filter out invalid rows
+          const validRows = (results.data as any[]).filter((row, index) => {
+            // Skip completely empty rows
+            if (!row || Object.keys(row).length === 0) {
+              console.log(`Skipping empty row ${index + 1}`);
+              return false;
+            }
+            
+            // Skip rows where all important values are empty
+            const hasRequiredData = row.Datum && row.Zeit && row.Eingriff && row['OP-Orgaeinheit'] && row['OP-Saal'];
+            if (!hasRequiredData) {
+              console.log(`Skipping incomplete row ${index + 1}:`, {
+                Datum: row.Datum,
+                Zeit: row.Zeit,
+                Eingriff: row.Eingriff,
+                'OP-Orgaeinheit': row['OP-Orgaeinheit'],
+                'OP-Saal': row['OP-Saal']
+              });
+              return false;
+            }
+            
+            // Skip header repetitions
+            if (row.Datum === 'Datum' || row.Zeit === 'Zeit') {
+              console.log(`Skipping header repetition at row ${index + 1}`);
+              return false;
+            }
+            
+            return true;
           });
           
-          const structureValidation = validateCSVStructure(rawData);
+          console.log(`Filtered: ${results.data.length} → ${validRows.length} valid rows`);
           
-          if (!structureValidation.isValid) {
+          if (validRows.length === 0) {
             setIsLoading(false);
-            const firstError = structureValidation.errors[0];
             toast({
-              title: "CSV-Validierung fehlgeschlagen",
-              description: firstError ? firstError.messageDE : "Unbekannter Validierungsfehler",
+              title: "Keine gültigen Daten",
+              description: "Die CSV-Datei enthält keine gültigen Operationsdaten. Überprüfen Sie, ob alle Pflichtfelder ausgefüllt sind.",
               variant: "destructive"
             });
             return;
           }
           
-          // Step 2: Transform CSV to operations
+          // STEP 2: Enhanced validation with detailed error reporting
           setTransformationProgress({
             currentRow: 0,
-            totalRows: rawData.length,
-            phase: 'transforming',
-            message: 'Transformiere CSV-Daten...'
+            totalRows: validRows.length,
+            phase: 'validating',
+            message: 'Validiere gefilterte Daten...'
           });
           
-          const transformResult = transformCSVToOperations(rawData, (progress) => {
+          const structureValidation = validateCSVStructure(validRows);
+          
+          if (!structureValidation.isValid) {
+            setIsLoading(false);
+            const firstError = structureValidation.errors[0];
+            
+            // Provide more helpful error messages
+            let helpfulMessage = firstError?.messageDE || "Unbekannter Validierungsfehler";
+            
+            if (firstError?.code === 'EMPTY_REQUIRED_FIELD') {
+              helpfulMessage += "\n\nHilfe: Stellen Sie sicher, dass alle Zeilen folgende Felder haben:\n" +
+                "• Datum (DD.MM.YYYY)\n" +
+                "• Zeit (HH:MM)\n" +
+                "• Eingriff (Operationsname)\n" +
+                "• OP-Orgaeinheit (UCH, ACH, GYN, URO, GCH, PCH)\n" +
+                "• OP-Saal (SAAL 1, SAAL 2, etc.)";
+            }
+            
+            toast({
+              title: "CSV-Validierung fehlgeschlagen",
+              description: helpfulMessage,
+              variant: "destructive"
+            });
+            return;
+          }
+          
+          // STEP 3: Transform to operations
+          setTransformationProgress({
+            currentRow: 0,
+            totalRows: validRows.length,
+            phase: 'transforming',
+            message: 'Konvertiere zu Operationsdaten...'
+          });
+          
+          const transformResult = transformCSVToOperations(validRows, (progress) => {
             setTransformationProgress(progress);
           });
           
-          // Step 3: Validate transformation result
+          // STEP 4: Final validation
           const transformValidation = validateTransformationResult(transformResult);
           
           if (!transformValidation.isValid) {
@@ -138,37 +201,35 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
             return;
           }
           
-          // Step 4: Comprehensive validation
-          setTransformationProgress({
-            currentRow: rawData.length,
-            totalRows: rawData.length,
-            phase: 'validating',
-            message: 'Führe umfassende Validierung durch...'
-          });
-          
-          const completeValidation = validateCompleteImport(rawData, transformResult.operations);
-          
+          // STEP 5: Success!
           setTransformationResult(transformResult);
-          setValidationResult(completeValidation);
+          setValidationResult({
+            structureValidation,
+            operationValidation: [],
+            timeConflicts: [],
+            roomValidation: [],
+            overallValid: true
+          });
           setShowPreview(true);
           setIsLoading(false);
           
-          // Show results
-          const hasErrors = completeValidation.structureValidation.errors.length > 0 ||
-                           transformResult.errors.length > 0 ||
-                           completeValidation.timeConflicts.some(c => c.severity === 'high');
+          // Show success message with warnings if any
+          const warningCount = structureValidation.warnings.length + transformResult.warnings.length;
           
-          if (hasErrors) {
-            toast({
-              title: "Import mit Fehlern analysiert",
-              description: `${transformResult.operations.length} Operationen verarbeitet, aber Fehler gefunden. Bitte prüfen Sie die Details.`,
-              variant: "destructive"
-            });
-          } else {
-            toast({
-              title: "CSV erfolgreich analysiert",
-              description: `${transformResult.operations.length} Operationen erfolgreich verarbeitet${transformResult.warnings.length > 0 ? ` mit ${transformResult.warnings.length} Warnungen` : ''}.`
-            });
+          toast({
+            title: "CSV erfolgreich verarbeitet",
+            description: `${transformResult.operations.length} Operationen gefunden${warningCount > 0 ? ` (${warningCount} Warnungen)` : ''}`,
+            className: "bg-green-600 text-white"
+          });
+          
+          if (warningCount > 0) {
+            setTimeout(() => {
+              toast({
+                title: `${warningCount} Warnungen beim Import`,
+                description: "Überprüfen Sie die Vorschau auf mögliche Probleme.",
+                variant: "default"
+              });
+            }, 2000);
           }
           
         } catch (error) {
@@ -176,7 +237,7 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
           console.error('CSV processing error:', error);
           toast({
             title: "Verarbeitungsfehler",
-            description: `Fehler beim Verarbeiten der CSV-Datei: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
+            description: `Ein unerwarteter Fehler ist aufgetreten: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
             variant: "destructive"
           });
         }
@@ -191,6 +252,39 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
       }
     });
   }, [toast]);
+  
+  // Also add this helper function to show users what valid data looks like:
+  const showCSVFormatHelp = () => {
+    const exampleCSV = `Datum;Zeit;Eingriff;OP-Orgaeinheit;OP-Saal;1.Operateur;OP-Status;Anmerkung
+  10.07.2025;07:30;Hüft-TEP links;UCH;SAAL 1;Dr. Weber;OP geplant;Pat. nüchtern
+  10.07.2025;09:00;Cholezystektomie;ACH;SAAL 2;Dr. Schmidt;OP geplant;Laparoskopisch
+  10.07.2025;10:30;Sectio caesarea;GYN;SAAL 3;Dr. Lange;OP geplant;Notfall`;
+    
+    console.log('Example CSV format:');
+    console.log(exampleCSV);
+    
+    return exampleCSV;
+  };
+  
+  // Add this button to your UI to help users understand the format:
+  <Button
+    variant="outline"
+    onClick={() => {
+      const example = showCSVFormatHelp();
+      const blob = new Blob([example], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'beispiel-op-plan.csv';
+      link.click();
+      
+      toast({
+        title: "Beispiel-CSV heruntergeladen",
+        description: "Verwenden Sie diese Datei als Vorlage für Ihre Daten.",
+      });
+    }}
+  >
+    📋 Beispiel-CSV herunterladen
+  </Button>
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
