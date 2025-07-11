@@ -35,27 +35,20 @@ import {
   DEPARTMENTS,
   CSV_STATUS_MAPPING 
 } from '@/lib/or-planner-types';
-
-interface ParsedOperation extends OperationAssignment {
-  validationErrors: string[];
-  csvRowIndex: number;
-}
-
-interface ValidationResult {
-  isValid: boolean;
-  errors: string[];
-  duplicateTimeSlots: Array<{
-    room: string;
-    date: string;
-    time: string;
-    operations: ParsedOperation[];
-  }>;
-  totalOperations: number;
-  validOperations: number;
-}
+import { 
+  validateCSVStructure, 
+  validateCompleteImport,
+  type ValidationError,
+  type ConflictDetails
+} from '@/lib/csv-validation';
+import { 
+  transformCSVToOperations,
+  validateTransformationResult,
+  type TransformationProgress 
+} from '@/lib/csv-transformer';
 
 interface CSVImportPanelProps {
-  onImport: (operations: OperationAssignment[]) => void;
+  onImport: (operations: OperationAssignment[], csvData: any[]) => void;
   currentDate?: string;
 }
 
@@ -65,184 +58,16 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [csvData, setCsvData] = useState<HospitalCSVRow[]>([]);
-  const [parsedOperations, setParsedOperations] = useState<ParsedOperation[]>([]);
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [csvData, setCsvData] = useState<any[]>([]);
+  const [transformationResult, setTransformationResult] = useState<any>(null);
+  const [validationResult, setValidationResult] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [fileName, setFileName] = useState<string>('');
+  const [transformationProgress, setTransformationProgress] = useState<TransformationProgress | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Complexity inference based on German procedure names
-  const inferComplexity = useCallback((procedureName: string): OperationComplexity => {
-    const name = procedureName.toLowerCase();
-    
-    // Sehr Hoch
-    if (name.includes('osteosynthese') || 
-        name.includes('instrumentierung') || 
-        name.includes('thyreoidektomie')) {
-      return 'Sehr Hoch';
-    }
-    
-    // Hoch
-    if (name.includes('cholezystektomie') || 
-        name.includes('hernie') || 
-        name.includes('mamma') || 
-        name.includes('nephrolithopaxie')) {
-      return 'Hoch';
-    }
-    
-    // Mittel
-    if (name.includes('exzision') || 
-        name.includes('lappenplastik') || 
-        name.includes('metallentfernung')) {
-      return 'Mittel';
-    }
-    
-    // Niedrig
-    if (name.includes('bet') || 
-        name.includes('tumor kopf')) {
-      return 'Niedrig';
-    }
-    
-    return 'Mittel'; // Default
-  }, []);
-
-  // Map time to shift for backward compatibility
-  const mapTimeToShift = useCallback((time: string): 'BD1' | 'BD2' | 'BD3' | 'RD' => {
-    const hour = parseInt(time.split(':')[0]);
-    if (hour >= 6 && hour < 12) return 'BD1';
-    if (hour >= 12 && hour < 16) return 'BD2';  
-    if (hour >= 16 && hour < 20) return 'BD3';
-    return 'RD';
-  }, []);
-
-  // Validate CSV row and convert to operation
-  const parseCSVRowToOperation = useCallback((row: HospitalCSVRow, index: number): ParsedOperation => {
-    const errors: string[] = [];
-    
-    // Validate required fields
-    if (!row.Datum) errors.push('Datum fehlt');
-    if (!row.Zeit) errors.push('Zeit fehlt');
-    if (!row.Eingriff) errors.push('Eingriff fehlt');
-    if (!row['OP-Orgaeinheit']) errors.push('OP-Orgaeinheit fehlt');
-    if (!row['OP-Saal']) errors.push('OP-Saal fehlt');
-    
-    // Validate and normalize room name
-    let room: OperatingRoomName | null = null;
-    if (row['OP-Saal']) {
-      const roomMatch = row['OP-Saal'].match(/SAAL (\d+)/i);
-      if (roomMatch) {
-        const roomCandidate = `SAAL ${roomMatch[1]}` as OperatingRoomName;
-        if (OPERATING_ROOMS.includes(roomCandidate)) {
-          room = roomCandidate;
-        } else {
-          errors.push(`Unbekannter Saal: ${row['OP-Saal']}`);
-        }
-      } else {
-        errors.push(`Ungültiges Saal-Format: ${row['OP-Saal']}`);
-      }
-    }
-    
-    // Validate department
-    const department = row['OP-Orgaeinheit'] as Department;
-    if (department && !DEPARTMENTS.includes(department)) {
-      errors.push(`Unbekannte Orgaeinheit: ${department}`);
-    }
-    
-    // Validate time format
-    if (row.Zeit && !/^\d{2}:\d{2}$/.test(row.Zeit)) {
-      errors.push(`Ungültiges Zeitformat: ${row.Zeit} (erwartet: HH:MM)`);
-    }
-    
-    // Validate date format
-    if (row.Datum) {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$|^\d{2}\.\d{2}\.\d{4}$/;
-      if (!dateRegex.test(row.Datum)) {
-        errors.push(`Ungültiges Datumsformat: ${row.Datum} (erwartet: YYYY-MM-DD oder DD.MM.YYYY)`);
-      }
-    }
-    
-    // Normalize date format (DD.MM.YYYY to YYYY-MM-DD)
-    let normalizedDate = row.Datum;
-    if (row.Datum && row.Datum.includes('.')) {
-      const parts = row.Datum.split('.');
-      if (parts.length === 3) {
-        normalizedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
-    
-    // Determine complexity
-    const complexity = inferComplexity(row.Eingriff || '');
-    
-    // Map CSV status to internal status
-    const status = CSV_STATUS_MAPPING[row['OP-Status']] || 'planned';
-    
-    const operation: ParsedOperation = {
-      id: `${room}-${normalizedDate}-${row.Zeit}-${index}`,
-      room: room || 'SAAL 1', // fallback
-      department,
-      scheduledDate: normalizedDate || '',
-      scheduledTime: row.Zeit || '',
-      procedureName: row.Eingriff || '',
-      primarySurgeon: row['1.Operateur'] || '',
-      complexity,
-      estimatedDuration: 90, // default duration
-      assignedStaff: [],
-      gptSuggestedStaff: [],
-      status,
-      notes: row.Anmerkung,
-      shift: mapTimeToShift(row.Zeit || '07:00'),
-      validationErrors: errors,
-      csvRowIndex: index
-    };
-    
-    return operation;
-  }, [inferComplexity, mapTimeToShift]);
-
-  // Validate all operations and check for conflicts
-  const validateOperations = useCallback((operations: ParsedOperation[]): ValidationResult => {
-    const validOperations = operations.filter(op => op.validationErrors.length === 0);
-    const errors: string[] = [];
-    
-    // Check for duplicate time slots in same room
-    const timeSlotMap = new Map<string, ParsedOperation[]>();
-    
-    validOperations.forEach(op => {
-      const key = `${op.room}-${op.scheduledDate}-${op.scheduledTime}`;
-      if (!timeSlotMap.has(key)) {
-        timeSlotMap.set(key, []);
-      }
-      timeSlotMap.get(key)!.push(op);
-    });
-    
-    const duplicateTimeSlots = Array.from(timeSlotMap.entries())
-      .filter(([, ops]) => ops.length > 1)
-      .map(([key, ops]) => {
-        const [room, date, time] = key.split('-');
-        return { room, date, time, operations: ops };
-      });
-    
-    if (duplicateTimeSlots.length > 0) {
-      errors.push(`${duplicateTimeSlots.length} Zeitkonflikte gefunden`);
-    }
-    
-    // Check for missing required data
-    const operationsWithErrors = operations.filter(op => op.validationErrors.length > 0);
-    if (operationsWithErrors.length > 0) {
-      errors.push(`${operationsWithErrors.length} Einträge mit Validierungsfehlern`);
-    }
-    
-    return {
-      isValid: errors.length === 0,
-      errors,
-      duplicateTimeSlots,
-      totalOperations: operations.length,
-      validOperations: validOperations.length
-    };
-  }, []);
-
-  // Handle file selection
+  // Handle file selection with comprehensive validation
   const handleFileSelect = useCallback((file: File) => {
     if (!file.name.toLowerCase().endsWith('.csv')) {
       toast({
@@ -255,38 +80,103 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
     
     setIsLoading(true);
     setFileName(file.name);
+    setTransformationProgress(null);
     
     Papa.parse(file, {
       header: true,
       delimiter: ';', // German CSV format
       encoding: 'UTF-8',
       skipEmptyLines: true,
-      complete: (results) => {
+      complete: async (results) => {
         try {
-          const rawData = results.data as HospitalCSVRow[];
+          const rawData = results.data as any[];
           setCsvData(rawData);
           
-          // Parse and validate operations
-          const operations = rawData.map((row, index) => parseCSVRowToOperation(row, index));
-          setParsedOperations(operations);
+          // Step 1: Validate CSV structure
+          setTransformationProgress({
+            currentRow: 0,
+            totalRows: rawData.length,
+            phase: 'validating',
+            message: 'Validiere CSV-Struktur...'
+          });
           
-          // Validate
-          const validation = validateOperations(operations);
-          setValidationResult(validation);
+          const structureValidation = validateCSVStructure(rawData);
           
+          if (!structureValidation.isValid) {
+            setIsLoading(false);
+            const firstError = structureValidation.errors[0];
+            toast({
+              title: "CSV-Validierung fehlgeschlagen",
+              description: firstError ? firstError.messageDE : "Unbekannter Validierungsfehler",
+              variant: "destructive"
+            });
+            return;
+          }
+          
+          // Step 2: Transform CSV to operations
+          setTransformationProgress({
+            currentRow: 0,
+            totalRows: rawData.length,
+            phase: 'transforming',
+            message: 'Transformiere CSV-Daten...'
+          });
+          
+          const transformResult = transformCSVToOperations(rawData, (progress) => {
+            setTransformationProgress(progress);
+          });
+          
+          // Step 3: Validate transformation result
+          const transformValidation = validateTransformationResult(transformResult);
+          
+          if (!transformValidation.isValid) {
+            setIsLoading(false);
+            toast({
+              title: "Transformation fehlgeschlagen",
+              description: transformValidation.summary,
+              variant: "destructive"
+            });
+            return;
+          }
+          
+          // Step 4: Comprehensive validation
+          setTransformationProgress({
+            currentRow: rawData.length,
+            totalRows: rawData.length,
+            phase: 'validating',
+            message: 'Führe umfassende Validierung durch...'
+          });
+          
+          const completeValidation = validateCompleteImport(rawData, transformResult.operations);
+          
+          setTransformationResult(transformResult);
+          setValidationResult(completeValidation);
           setShowPreview(true);
           setIsLoading(false);
           
-          toast({
-            title: "CSV erfolgreich analysiert",
-            description: `${operations.length} Operationen gefunden, ${validation.validOperations} gültig`
-          });
+          // Show results
+          const hasErrors = completeValidation.structureValidation.errors.length > 0 ||
+                           transformResult.errors.length > 0 ||
+                           completeValidation.timeConflicts.some(c => c.severity === 'high');
+          
+          if (hasErrors) {
+            toast({
+              title: "Import mit Fehlern analysiert",
+              description: `${transformResult.operations.length} Operationen verarbeitet, aber Fehler gefunden. Bitte prüfen Sie die Details.`,
+              variant: "destructive"
+            });
+          } else {
+            toast({
+              title: "CSV erfolgreich analysiert",
+              description: `${transformResult.operations.length} Operationen erfolgreich verarbeitet${transformResult.warnings.length > 0 ? ` mit ${transformResult.warnings.length} Warnungen` : ''}.`
+            });
+          }
           
         } catch (error) {
           setIsLoading(false);
+          console.error('CSV processing error:', error);
           toast({
-            title: "Parsing-Fehler",
-            description: "Die CSV-Datei konnte nicht verarbeitet werden.",
+            title: "Verarbeitungsfehler",
+            description: `Fehler beim Verarbeiten der CSV-Datei: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
             variant: "destructive"
           });
         }
@@ -300,7 +190,7 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
         });
       }
     });
-  }, [parseCSVRowToOperation, validateOperations, toast]);
+  }, [toast]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -331,45 +221,48 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
     }
   }, [handleFileSelect]);
 
-  // Import confirmed operations
+  // Import confirmed operations with enhanced validation
   const handleConfirmImport = useCallback(() => {
-    if (!validationResult || !validationResult.isValid) {
+    if (!validationResult || !transformationResult) {
       toast({
         title: "Import nicht möglich",
-        description: "Bitte beheben Sie zuerst alle Validierungsfehler.",
+        description: "Keine validierten Daten zum Importieren verfügbar.",
         variant: "destructive"
       });
       return;
     }
-    
-    const validOperations = parsedOperations.filter(op => op.validationErrors.length === 0);
-    
-    // Remove validation-specific fields before import
-    const cleanOperations: OperationAssignment[] = validOperations.map(op => {
-      const { validationErrors, csvRowIndex, ...cleanOp } = op;
-      return cleanOp;
-    });
-    
-    onImport(cleanOperations);
-    
-    toast({
-      title: "Import erfolgreich",
-      description: `${cleanOperations.length} Operationen wurden importiert.`,
-      className: "bg-green-600 text-white"
-    });
+
+    const hasErrors = validationResult.structureValidation.errors.length > 0 ||
+                     transformationResult.errors.length > 0 ||
+                     validationResult.timeConflicts.some((c: ConflictDetails) => c.severity === 'high');
+
+    if (hasErrors) {
+      const continueImport = window.confirm(
+        "Es wurden Fehler oder kritische Konflikte gefunden. Möchten Sie trotzdem importieren? " +
+        "Dies könnte zu Problemen im Operationsplan führen."
+      );
+      
+      if (!continueImport) {
+        return;
+      }
+    }
+
+    // Pass both operations and original CSV data for comprehensive validation
+    onImport(transformationResult.operations, csvData);
     
     // Reset state
     handleReset();
-  }, [validationResult, parsedOperations, onImport, toast]);
+  }, [validationResult, transformationResult, csvData, onImport, toast]);
 
   // Reset component state
   const handleReset = useCallback(() => {
     setCsvData([]);
-    setParsedOperations([]);
+    setTransformationResult(null);
     setValidationResult(null);
     setShowPreview(false);
     setFileName('');
     setIsLoading(false);
+    setTransformationProgress(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -484,15 +377,15 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
             </div>
 
             {/* Validation Results */}
-            {validationResult && (
+            {validationResult && transformationResult && (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Card className="p-4">
                     <div className="flex items-center space-x-2">
                       <Activity className="h-5 w-5 text-blue-500" />
                       <div>
-                        <p className="text-2xl font-bold">{validationResult.totalOperations}</p>
-                        <p className="text-sm text-muted-foreground">Gesamt</p>
+                        <p className="text-2xl font-bold">{transformationResult.statistics.totalRows}</p>
+                        <p className="text-sm text-muted-foreground">CSV Zeilen</p>
                       </div>
                     </div>
                   </Card>
@@ -500,8 +393,19 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
                     <div className="flex items-center space-x-2">
                       <CheckCircle className="h-5 w-5 text-green-500" />
                       <div>
-                        <p className="text-2xl font-bold text-green-600">{validationResult.validOperations}</p>
-                        <p className="text-sm text-muted-foreground">Gültig</p>
+                        <p className="text-2xl font-bold text-green-600">{transformationResult.operations.length}</p>
+                        <p className="text-sm text-muted-foreground">Operationen</p>
+                      </div>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="h-5 w-5 text-orange-500" />
+                      <div>
+                        <p className="text-2xl font-bold text-orange-600">
+                          {transformationResult.warnings.length + validationResult.structureValidation.warnings.length}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Warnungen</p>
                       </div>
                     </div>
                   </Card>
@@ -510,40 +414,76 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
                       <AlertCircle className="h-5 w-5 text-red-500" />
                       <div>
                         <p className="text-2xl font-bold text-red-600">
-                          {validationResult.totalOperations - validationResult.validOperations}
+                          {transformationResult.errors.length + validationResult.timeConflicts.filter((c: ConflictDetails) => c.severity === 'high').length}
                         </p>
-                        <p className="text-sm text-muted-foreground">Fehler</p>
+                        <p className="text-sm text-muted-foreground">Kritische Fehler</p>
                       </div>
                     </div>
                   </Card>
                 </div>
 
-                {/* Validation Errors */}
-                {validationResult.errors.length > 0 && (
+                {/* Critical Errors */}
+                {(transformationResult.errors.length > 0 || validationResult.timeConflicts.some((c: ConflictDetails) => c.severity === 'high')) && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      <strong>Validierungsfehler:</strong>
-                      <ul className="mt-2 list-disc list-inside">
-                        {validationResult.errors.map((error, index) => (
-                          <li key={index}>{error}</li>
+                      <strong>Kritische Fehler gefunden:</strong>
+                      <ul className="mt-2 list-disc list-inside space-y-1">
+                        {transformationResult.errors.slice(0, 3).map((error: ValidationError, index: number) => (
+                          <li key={index} className="text-sm">
+                            {error.rowIndex !== undefined ? `Zeile ${error.rowIndex + 1}: ` : ''}{error.messageDE}
+                          </li>
+                        ))}
+                        {validationResult.timeConflicts
+                          .filter((c: ConflictDetails) => c.severity === 'high')
+                          .slice(0, 2)
+                          .map((conflict: ConflictDetails, index: number) => (
+                            <li key={`conflict-${index}`} className="text-sm">
+                              Zeitkonflikt in {conflict.room} um {conflict.timeSlot}: {conflict.conflictingOperations.length} Operationen
+                            </li>
+                          ))}
+                      </ul>
+                      {(transformationResult.errors.length + validationResult.timeConflicts.filter((c: ConflictDetails) => c.severity === 'high').length) > 5 && (
+                        <p className="mt-2 text-sm">...und weitere Fehler</p>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Warnings */}
+                {(transformationResult.warnings.length > 0 || validationResult.structureValidation.warnings.length > 0) && (
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>Warnungen:</strong>
+                      <ul className="mt-2 list-disc list-inside space-y-1">
+                        {transformationResult.warnings.slice(0, 3).map((warning: ValidationError, index: number) => (
+                          <li key={index} className="text-sm">
+                            {warning.rowIndex !== undefined ? `Zeile ${warning.rowIndex + 1}: ` : ''}{warning.messageDE}
+                          </li>
+                        ))}
+                        {validationResult.structureValidation.warnings.slice(0, 2).map((warning: ValidationError, index: number) => (
+                          <li key={`struct-${index}`} className="text-sm">{warning.messageDE}</li>
                         ))}
                       </ul>
                     </AlertDescription>
                   </Alert>
                 )}
 
-                {/* Duplicate Time Slots */}
-                {validationResult.duplicateTimeSlots.length > 0 && (
-                  <Alert variant="destructive">
+                {/* Time Conflicts */}
+                {validationResult.timeConflicts.length > 0 && (
+                  <Alert variant={validationResult.timeConflicts.some((c: ConflictDetails) => c.severity === 'high') ? "destructive" : "default"}>
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      <strong>Zeitkonflikte gefunden:</strong>
+                      <strong>Zeitkonflikte gefunden ({validationResult.timeConflicts.length}):</strong>
                       <div className="mt-2 space-y-1">
-                        {validationResult.duplicateTimeSlots.map((conflict, index) => (
+                        {validationResult.timeConflicts.slice(0, 3).map((conflict: ConflictDetails, index: number) => (
                           <div key={index} className="text-sm">
-                            {conflict.room} am {conflict.date} um {conflict.time}: 
-                            {conflict.operations.length} Operationen
+                            <span className={`font-medium ${conflict.severity === 'high' ? 'text-red-600' : conflict.severity === 'medium' ? 'text-orange-600' : 'text-yellow-600'}`}>
+                              {conflict.severity === 'high' ? '🔴' : conflict.severity === 'medium' ? '🟡' : '🟢'}
+                            </span>
+                            {' '}
+                            {conflict.room} um {conflict.timeSlot}: {conflict.conflictingOperations.length} Operationen
                           </div>
                         ))}
                       </div>
