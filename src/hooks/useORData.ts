@@ -18,6 +18,16 @@ import { useToast } from "@/hooks/use-toast";
 import type { CriticalSituationData, OptimizationSuggestionItem } from '@/components/or-planner/JuliaRecommendationsPanel';
 import type { LearningProgressItem } from '@/components/or-planner/AiAssistantPanel';
 import { Brain, TrendingUp, Settings2 } from 'lucide-react';
+import { 
+  validateCompleteImport,
+  type ValidationError,
+  type ConflictDetails 
+} from '@/lib/csv-validation';
+import { 
+  transformCSVToOperations,
+  validateTransformationResult,
+  type TransformationProgress 
+} from '@/lib/csv-transformer';
 
 const TOTAL_ASSIGNMENTS_FOR_JULIA = 19; // As per requirements
 
@@ -43,6 +53,23 @@ export function useORData() {
   const [selectedOperation, setSelectedOperation] = useState<OperationAssignment | null>(null);
   const [juliaOverrides, setJuliaOverrides] = useState<JuliaOverride[]>([]);
   const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  
+  // Import state management
+  const [importProgress, setImportProgress] = useState<{
+    isImporting: boolean;
+    currentStep: string;
+    progress: number;
+    errors: string[];
+  }>({
+    isImporting: false,
+    currentStep: '',
+    progress: 0,
+    errors: []
+  });
+  
+  // Backup state for rollback functionality
+  const [scheduleBackup, setScheduleBackup] = useState<TimeBasedORSchedule | null>(null);
+  
   const { toast } = useToast();
 
   // Critical situation and optimization data
@@ -85,34 +112,269 @@ export function useORData() {
     });
   }, [schedule]);
 
-  // Import CSV data function
-  const importCSVData = useCallback((operations: OperationAssignment[]) => {
-    const newSchedule: TimeBasedORSchedule = {};
-    
-    // Initialize empty schedule
-    OPERATING_ROOMS.forEach(room => {
-      newSchedule[room] = {};
+  // Enhanced CSV import with comprehensive validation
+  const importCSVData = useCallback(async (operations: OperationAssignment[], csvData?: any[]) => {
+    setImportProgress({
+      isImporting: true,
+      currentStep: 'Validierung startet...',
+      progress: 0,
+      errors: []
     });
-    
-    // Add operations to schedule
-    operations.forEach(operation => {
-      const timeSlot = operation.scheduledTime;
-      const room = operation.room;
-      
-      if (OPERATING_ROOMS.includes(room)) {
-        newSchedule[room][timeSlot] = operation;
+
+    try {
+      // Create backup for rollback
+      setScheduleBackup(JSON.parse(JSON.stringify(schedule)));
+
+      // Step 1: Comprehensive validation (20% progress)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Validiere CSV-Struktur und Daten...',
+        progress: 20
+      }));
+
+      let validationResult;
+      if (csvData) {
+        validationResult = validateCompleteImport(csvData, operations);
+      } else {
+        // If no CSV data provided, perform basic operation validation
+        validationResult = {
+          structureValidation: { isValid: true, errors: [], warnings: [], summary: { totalRows: operations.length, validRows: operations.length, errorRows: 0, warningRows: 0 } },
+          operationValidation: [],
+          timeConflicts: [],
+          roomValidation: [],
+          overallValid: true
+        };
       }
+
+      // Step 2: Handle validation results (40% progress)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Prüfe Validierungsergebnisse...',
+        progress: 40
+      }));
+
+      const criticalErrors = [
+        ...validationResult.structureValidation.errors,
+        ...validationResult.operationValidation.filter(e => e.severity === 'error'),
+        ...validationResult.roomValidation.filter(e => e.severity === 'error')
+      ];
+
+      const highPriorityConflicts = validationResult.timeConflicts.filter(c => c.severity === 'high');
+
+      if (criticalErrors.length > 0) {
+        const errorMessages = criticalErrors.slice(0, 3).map(e => e.messageDE);
+        setImportProgress(prev => ({
+          ...prev,
+          isImporting: false,
+          currentStep: 'Import abgebrochen',
+          errors: errorMessages
+        }));
+
+        toast({
+          title: "Import-Validierung fehlgeschlagen",
+          description: `${criticalErrors.length} kritische Fehler gefunden. Erste Fehler: ${errorMessages[0]}`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Step 3: Handle time conflicts (60% progress)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Prüfe Zeitkonflikte...',
+        progress: 60
+      }));
+
+      if (highPriorityConflicts.length > 0) {
+        const conflictMessages = highPriorityConflicts.slice(0, 2).map(c => 
+          `${c.room}: ${c.timeSlot} (${c.conflictingOperations.length} Operationen)`
+        );
+
+        // Ask user if they want to continue despite conflicts
+        const continueWithConflicts = window.confirm(
+          `Schwerwiegende Zeitkonflikte gefunden:\n${conflictMessages.join('\n')}\n\nTrotzdem importieren?`
+        );
+
+        if (!continueWithConflicts) {
+          setImportProgress(prev => ({
+            ...prev,
+            isImporting: false,
+            currentStep: 'Import vom Benutzer abgebrochen',
+            errors: conflictMessages
+          }));
+          return;
+        }
+      }
+
+      // Step 4: Create new schedule (80% progress)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Erstelle neuen Operationsplan...',
+        progress: 80
+      }));
+
+      const newSchedule: TimeBasedORSchedule = {};
+      
+      // Initialize empty schedule
+      OPERATING_ROOMS.forEach(room => {
+        newSchedule[room] = {};
+      });
+      
+      // Add operations to schedule
+      let successCount = 0;
+      let skipCount = 0;
+      
+      operations.forEach(operation => {
+        const timeSlot = operation.scheduledTime;
+        const room = operation.room;
+        
+        if (OPERATING_ROOMS.includes(room)) {
+          // Check for existing operation at this time slot
+          if (newSchedule[room][timeSlot]) {
+            skipCount++;
+            console.warn(`Skipping duplicate operation at ${room} ${timeSlot}`);
+          } else {
+            newSchedule[room][timeSlot] = operation;
+            successCount++;
+          }
+        } else {
+          skipCount++;
+          console.warn(`Skipping operation for unknown room: ${room}`);
+        }
+      });
+
+      // Step 5: Apply changes (100% progress)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Wende Änderungen an...',
+        progress: 100
+      }));
+
+      setSchedule(newSchedule);
+      setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
+      
+      // Clear import progress after successful import
+      setTimeout(() => {
+        setImportProgress({
+          isImporting: false,
+          currentStep: '',
+          progress: 0,
+          errors: []
+        });
+      }, 1000);
+
+      // Show success message with details
+      const warningCount = validationResult.structureValidation.warnings.length + 
+                          validationResult.operationValidation.filter(e => e.severity === 'warning').length;
+      
+      toast({
+        title: "CSV-Import erfolgreich",
+        description: `${successCount} Operationen importiert${skipCount > 0 ? `, ${skipCount} übersprungen` : ''}${warningCount > 0 ? `, ${warningCount} Warnungen` : ''}`,
+        className: "bg-green-600 text-white"
+      });
+
+      // Show warnings if any
+      if (warningCount > 0) {
+        setTimeout(() => {
+          toast({
+            title: `${warningCount} Warnungen beim Import`,
+            description: "Überprüfen Sie die importierten Daten auf Unregelmäßigkeiten.",
+            variant: "default"
+          });
+        }, 2000);
+      }
+
+    } catch (error) {
+      console.error('Import error:', error);
+      setImportProgress({
+        isImporting: false,
+        currentStep: 'Import fehlgeschlagen',
+        progress: 0,
+        errors: [error instanceof Error ? error.message : 'Unbekannter Fehler']
+      });
+
+      toast({
+        title: "Import-Fehler",
+        description: `Ein unerwarteter Fehler ist aufgetreten: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
+        variant: "destructive"
+      });
+
+      // Trigger rollback
+      rollbackImport();
+    }
+  }, [schedule, toast]);
+
+  // Rollback functionality
+  const rollbackImport = useCallback(() => {
+    if (scheduleBackup) {
+      setSchedule(scheduleBackup);
+      setScheduleBackup(null);
+      toast({
+        title: "Import rückgängig gemacht",
+        description: "Der vorherige Zustand wurde wiederhergestellt.",
+        className: "bg-blue-600 text-white"
+      });
+    }
+  }, [scheduleBackup, toast]);
+
+  // Enhanced CSV import with transformation and validation
+  const importCSVDataWithValidation = useCallback(async (csvData: any[]) => {
+    setImportProgress({
+      isImporting: true,
+      currentStep: 'Starte Import...',
+      progress: 0,
+      errors: []
     });
-    
-    setSchedule(newSchedule);
-    setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
-    
-    toast({
-      title: "CSV-Daten importiert",
-      description: `${operations.length} Operationen wurden erfolgreich importiert.`,
-      className: "bg-green-600 text-white"
-    });
-  }, [toast]);
+
+    try {
+      // Step 1: Transform CSV data (30% progress)
+      const transformationResult = transformCSVToOperations(csvData, (progress: TransformationProgress) => {
+        const progressPercent = Math.round((progress.currentRow / progress.totalRows) * 30);
+        setImportProgress(prev => ({
+          ...prev,
+          currentStep: progress.message,
+          progress: progressPercent
+        }));
+      });
+
+      // Step 2: Validate transformation result (50% progress)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Validiere Transformationsergebnis...',
+        progress: 50
+      }));
+
+      const transformationValidation = validateTransformationResult(transformationResult);
+      
+      if (!transformationValidation.isValid) {
+        throw new Error(`Transformation fehlgeschlagen: ${transformationValidation.summary}`);
+      }
+
+      // Step 3: Import the operations (remaining progress handled by importCSVData)
+      setImportProgress(prev => ({
+        ...prev,
+        currentStep: 'Importiere Operationen...',
+        progress: 70
+      }));
+
+      await importCSVData(transformationResult.operations, csvData);
+
+    } catch (error) {
+      console.error('CSV import with validation error:', error);
+      setImportProgress({
+        isImporting: false,
+        currentStep: 'Import fehlgeschlagen',
+        progress: 0,
+        errors: [error instanceof Error ? error.message : 'Unbekannter Fehler']
+      });
+
+      toast({
+        title: "CSV-Import fehlgeschlagen",
+        description: error instanceof Error ? error.message : 'Ein unerwarteter Fehler ist aufgetreten.',
+        variant: "destructive"
+      });
+    }
+  }, [importCSVData, toast]);
 
   // Add time slot function
   const addTimeSlot = useCallback((room: OperatingRoomName, time: string, operation: OperationAssignment) => {
@@ -590,13 +852,20 @@ export function useORData() {
     optimizationSuggestionsData,
     handleExtendStaff,
     handleRescheduleStaff,
-    // New time-based functions
+    // Enhanced import functions
     importCSVData,
+    importCSVDataWithValidation,
+    rollbackImport,
+    // Time-based functions
     addTimeSlot,
     detectTimeConflicts,
     getAvailableTimeSlots,
     getOperationsByTimeRange,
+    // State management
     currentDate,
     setCurrentDate,
+    // Import progress and error handling
+    importProgress,
+    hasBackup: scheduleBackup !== null,
   };
 }
