@@ -292,7 +292,7 @@ export function useORData() {
   /**
    * Calculate data quality score
    */
-  const calculateDataQualityScore = useCallback(): number => {
+  const calculateDataQualityScore = useCallback((): number => {
     if (allAssignmentsList.length === 0) return 0;
     
     let score = 100;
