@@ -518,22 +518,27 @@ const importCSVData = useCallback(async (operations: OperationAssignment[], csvD
 
   const loadGptSuggestions = useCallback(async () => {
     if (isLoading && currentWorkflowStepKey === 'GPT_SUGGESTIONS_READY') return;
-
+  
     setIsLoading(true);
     if (currentWorkflowStepKey === 'PLAN_CREATED') {
       setPreviousWorkflowStepKey(currentWorkflowStepKey);
       setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
     }
     
-    // Convert time-based operations to shift-based for AI compatibility
+    // Convert time-based operations to the correct input format for AI
     const operationsForAI = allAssignmentsList
       .filter(op => op.status === 'empty' || op.status === 'critical_pending' || op.status === 'planned')
       .map(op => ({
-        name: op.room,
-        shift: op.shift || 'BD1', // fallback to BD1 if no shift mapped
+        id: op.id,
+        room: op.room,
+        department: op.department,
+        scheduledTime: op.scheduledTime,
+        procedureName: op.procedureName,
+        primarySurgeon: op.primarySurgeon,
         operationComplexity: op.complexity || 'Mittel',
+        estimatedDuration: op.estimatedDuration
       }));
-
+  
     if (operationsForAI.length === 0 && currentWorkflowStepKey !== 'PLAN_CREATED') {
       toast({ 
         title: "Keine Operationen für KI-Planung", 
@@ -543,15 +548,19 @@ const importCSVData = useCallback(async (operations: OperationAssignment[], csvD
       return;
     }
     
-    const dynamicAvailableStaff = staff.filter(s => !s.isSick).map(s => s.name);
-    const dynamicSickStaff = staff.filter(s => s.isSick).map(s => s.name);
-
+    // Updated input format for the AI flow
     const input: SuggestStaffingPlanInput = {
-      operatingRooms: operationsForAI,
-      availableStaff: dynamicAvailableStaff,
-      sickStaff: dynamicSickStaff,
+      operations: operationsForAI,
+      availableStaff: staff.filter(s => !s.isSick).map(s => ({
+        name: s.name,
+        departmentExpertise: s.departmentSpecializations || [],
+        skills: s.skills || [],
+        currentAssignments: [] // Could be populated with current assignments
+      })),
+      sickStaff: staff.filter(s => s.isSick).map(s => s.name),
+      currentDate: currentDate
     };
-
+  
     try {
       const suggestions = await fetchAiStaffingSuggestions(input);
       
@@ -559,25 +568,23 @@ const importCSVData = useCallback(async (operations: OperationAssignment[], csvD
         const newSchedule = { ...prev };
         
         suggestions.assignments.forEach(sugg => {
-          const room = sugg.operatingRoom as OperatingRoomName;
+          const room = sugg.operationId.split('-')[0] + ' ' + sugg.operationId.split('-')[1] as OperatingRoomName;
+          const timeSlot = sugg.operationId.split('-').slice(-1)[0];
           
-          // Find operations in this room that match the suggestion
-          Object.keys(newSchedule[room] || {}).forEach(timeSlot => {
+          if (newSchedule[room] && newSchedule[room][timeSlot]) {
             const operation = newSchedule[room][timeSlot];
-            if (operation && (operation.status === 'empty' || operation.status === 'critical_pending' || operation.status === 'planned')) {
-              const staffMembers = sugg.staff
-                .map(name => staff.find(s => s.name === name))
-                .filter(Boolean) as StaffMember[];
-              
-              newSchedule[room][timeSlot] = {
-                ...operation,
-                gptSuggestedStaff: staffMembers,
-                assignedStaff: staffMembers,
-                aiReasoning: sugg.reason,
-                status: 'pending_gpt'
-              };
-            }
-          });
+            const staffMembers = sugg.assignedStaff
+              .map(staffAssignment => staff.find(s => s.name === staffAssignment.name))
+              .filter(Boolean) as StaffMember[];
+            
+            newSchedule[room][timeSlot] = {
+              ...operation,
+              gptSuggestedStaff: staffMembers,
+              assignedStaff: staffMembers,
+              aiReasoning: sugg.reasoning,
+              status: 'pending_gpt'
+            };
+          }
         });
         
         return newSchedule;
@@ -600,7 +607,7 @@ const importCSVData = useCallback(async (operations: OperationAssignment[], csvD
     } finally {
       setIsLoading(false);
     }
-  }, [allAssignmentsList, staff, toast, currentWorkflowStepKey, previousWorkflowStepKey, isLoading]);
+  }, [allAssignmentsList, staff, toast, currentWorkflowStepKey, previousWorkflowStepKey, isLoading, currentDate]);
 
   useEffect(() => {
     if (currentWorkflowStepKey === 'PLAN_CREATED' && !isLoading && allAssignmentsList.length > 0) {
