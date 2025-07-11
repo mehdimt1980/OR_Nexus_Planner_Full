@@ -78,8 +78,20 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
     return schedule[room]?.[timeSlot] || null;
   };
 
+  // Get operations count per room for stats
+  const getRoomOperationsCount = (room: OperatingRoomName): number => {
+    return Object.keys(schedule[room] || {}).length;
+  };
+
+  // Get room utilization percentage (assuming 8-hour day with 30-min slots = 16 slots max)
+  const getRoomUtilization = (room: OperatingRoomName): number => {
+    const operationsCount = getRoomOperationsCount(room);
+    const maxSlots = 16; // 8 hours * 2 slots per hour
+    return Math.round((operationsCount / maxSlots) * 100);
+  };
+
   // Calculate grid columns (room column + time slot columns)
-  const gridColumns = `minmax(180px, 1fr) repeat(${allTimeSlots.length}, minmax(200px, 1fr))`;
+  const gridColumns = `minmax(220px, 1fr) repeat(${allTimeSlots.length}, minmax(220px, 1fr))`;
 
   if (allTimeSlots.length === 0) {
     return (
@@ -138,17 +150,31 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
               const primaryDepartment = getRoomDepartment(roomName);
               const departmentColor = getDepartmentColor(primaryDepartment);
               const allDepartments = ROOM_DEPARTMENT_MAPPING[roomName] || [];
+              const operationsCount = getRoomOperationsCount(roomName);
+              const utilization = getRoomUtilization(roomName);
               
               return (
                 <React.Fragment key={roomName}>
                   {/* Room Header */}
                   <div className="p-3 bg-card text-card-foreground sticky left-0 z-10 self-stretch flex flex-col justify-center border-r border-border">
                     <div className="space-y-2">
-                      <div className="font-semibold text-base">{roomName}</div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-base">{roomName}</span>
+                        {/* Utilization indicator */}
+                        <div className="flex items-center space-x-1">
+                          <div className={`w-2 h-2 rounded-full ${
+                            utilization >= 80 ? 'bg-red-500' :
+                            utilization >= 60 ? 'bg-yellow-500' :
+                            utilization >= 40 ? 'bg-green-500' :
+                            'bg-gray-300'
+                          }`} />
+                          <span className="text-xs text-muted-foreground">{utilization}%</span>
+                        </div>
+                      </div>
                       
                       {/* Primary Department */}
                       {primaryDepartment && (
-                        <Badge className={`${departmentColor} text-white text-xs px-2 py-1`}>
+                        <Badge className={`${departmentColor} text-white text-xs px-2 py-1 font-medium`}>
                           {primaryDepartment}
                         </Badge>
                       )}
@@ -160,7 +186,7 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
                             <Badge 
                               key={dept} 
                               variant="outline" 
-                              className="text-xs px-1.5 py-0.5"
+                              className="text-xs px-1.5 py-0.5 border-muted-foreground/30"
                             >
                               {dept}
                             </Badge>
@@ -168,9 +194,21 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
                         </div>
                       )}
                       
-                      {/* Room Stats */}
-                      <div className="text-xs text-muted-foreground">
-                        {Object.keys(schedule[roomName] || {}).length} OPs geplant
+                      {/* Room Statistics */}
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <div className="flex items-center justify-between">
+                          <span>Operationen:</span>
+                          <span className="font-medium">{operationsCount}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Auslastung:</span>
+                          <span className={`font-medium ${
+                            utilization >= 80 ? 'text-red-600' :
+                            utilization >= 60 ? 'text-yellow-600' :
+                            utilization >= 40 ? 'text-green-600' :
+                            'text-gray-500'
+                          }`}>{utilization}%</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -194,28 +232,41 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
         
-        {/* Summary Footer */}
-        <div className="mt-4 p-4 bg-muted/30 rounded-lg">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div>
+        {/* Enhanced Summary Footer */}
+        <div className="mt-6 p-4 bg-gradient-to-r from-muted/50 to-muted/30 rounded-lg border">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-center">
+            <div className="space-y-1">
               <p className="text-2xl font-bold text-primary">
                 {OPERATING_ROOMS.reduce((total, room) => 
                   total + Object.keys(schedule[room] || {}).length, 0
                 )}
               </p>
-              <p className="text-sm text-muted-foreground">Geplante Operationen</p>
+              <p className="text-xs text-muted-foreground">Geplante Operationen</p>
             </div>
-            <div>
+            
+            <div className="space-y-1">
               <p className="text-2xl font-bold text-green-600">
                 {OPERATING_ROOMS.reduce((total, room) => 
                   total + Object.values(schedule[room] || {}).filter(op => 
-                    op && (op.status === 'approved_julia' || op.status === 'final_approved')
+                    op && (op.status === 'approved_julia' || op.status === 'final_approved' || op.status === 'completed')
                   ).length, 0
                 )}
               </p>
-              <p className="text-sm text-muted-foreground">Genehmigt</p>
+              <p className="text-xs text-muted-foreground">Genehmigt/Abgeschlossen</p>
             </div>
-            <div>
+            
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-blue-600">
+                {OPERATING_ROOMS.reduce((total, room) => 
+                  total + Object.values(schedule[room] || {}).filter(op => 
+                    op && op.status === 'planned'
+                  ).length, 0
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">Geplant</p>
+            </div>
+            
+            <div className="space-y-1">
               <p className="text-2xl font-bold text-orange-600">
                 {OPERATING_ROOMS.reduce((total, room) => 
                   total + Object.values(schedule[room] || {}).filter(op => 
@@ -223,9 +274,10 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
                   ).length, 0
                 )}
               </p>
-              <p className="text-sm text-muted-foreground">KI-Vorschläge</p>
+              <p className="text-xs text-muted-foreground">KI-Vorschläge</p>
             </div>
-            <div>
+            
+            <div className="space-y-1">
               <p className="text-2xl font-bold text-red-600">
                 {OPERATING_ROOMS.reduce((total, room) => 
                   total + Object.values(schedule[room] || {}).filter(op => 
@@ -233,9 +285,30 @@ const OperatingRoomScheduleTable: React.FC<OperatingRoomScheduleTableProps> = ({
                   ).length, 0
                 )}
               </p>
-              <p className="text-sm text-muted-foreground">Kritisch</p>
+              <p className="text-xs text-muted-foreground">Kritisch</p>
+            </div>
+            
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-purple-600">
+                {allTimeSlots.length}
+              </p>
+              <p className="text-xs text-muted-foreground">Aktive Zeitslots</p>
             </div>
           </div>
+          
+          {/* Time Range Info */}
+          {allTimeSlots.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-muted-foreground/20 flex justify-center items-center space-x-4 text-sm text-muted-foreground">
+              <div className="flex items-center space-x-1">
+                <Clock className="h-4 w-4" />
+                <span>Zeitbereich: {allTimeSlots[0]} - {allTimeSlots[allTimeSlots.length - 1]}</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <MapPin className="h-4 w-4" />
+                <span>{OPERATING_ROOMS.length} OP-Säle aktiv</span>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
