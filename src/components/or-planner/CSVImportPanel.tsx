@@ -88,8 +88,9 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
     Papa.parse(file, {
       header: true,
       delimiter: ';', // German CSV format
-      encoding: 'UTF-8',
+      encoding: 'ISO-8859-1', // Handle cp1252 encoding
       skipEmptyLines: true,
+      transformHeader: (header: string) => header.trim(), // Clean headers
       complete: async (results) => {
         try {
           const rawData = results.data as any[];
