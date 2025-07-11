@@ -23,6 +23,15 @@ type AiAssistantPanelProps = {
   isLoading: boolean;
 };
 
+// Define default icons as a separate constant and export it
+// This ensures that the type of AiAssistantPanel (React.FC) isn't directly modified
+export const defaultAiAssistantLearningIcons = {
+  Learned: Brain,
+  Improvement: ImprovementIcon,
+  NextOptimization: NextOptimizationIcon,
+};
+
+
 const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   aiRawLearningSummary,
   structuredLearningPoints,
@@ -94,13 +103,5 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     </Card>
   );
 };
-
-// Default icons if needed elsewhere
-AiAssistantPanel.defaultLearningIcons = {
-  Learned: Brain,
-  Improvement: ImprovementIcon,
-  NextOptimization: NextOptimizationIcon,
-};
-
 
 export default AiAssistantPanel;
