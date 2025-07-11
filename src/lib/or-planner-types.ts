@@ -61,8 +61,8 @@ export type OperationAssignment = {
   shift?: Shift; 
 };
 
-// Updated to use rooms instead of departments as primary key
-export type ORSchedule = Record<OperatingRoomName, Record<string, OperationAssignment[]>>; // room -> date -> operations[]
+// Time-based schedule: room -> timeSlot -> operation
+export type ORSchedule = Record<OperatingRoomName, Record<string, OperationAssignment>>; // room -> timeSlot -> operation
 
 export type WorkflowStepKey =
   | 'PLAN_CREATED'
