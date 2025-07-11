@@ -67,6 +67,9 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // Get parsed operations from transformation result
+  const parsedOperations = transformationResult?.operations || [];
+
   // Handle file selection with comprehensive validation
   const handleFileSelect = useCallback((file: File) => {
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -367,7 +370,7 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
                 </Button>
                 <Button 
                   onClick={handleConfirmImport}
-                  disabled={!validationResult?.isValid}
+                  disabled={!validationResult?.overallValid}
                   className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   <CheckCircle className="h-4 w-4 mr-2" />
@@ -453,7 +456,7 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
                 {/* Warnings */}
                 {(transformationResult.warnings.length > 0 || validationResult.structureValidation.warnings.length > 0) && (
                   <Alert>
-                    <Info className="h-4 w-4" />
+                    <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
                       <strong>Warnungen:</strong>
                       <ul className="mt-2 list-disc list-inside space-y-1">
@@ -504,10 +507,10 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
               
               <ScrollArea className="h-96 w-full border rounded-md">
                 <div className="p-4 space-y-2">
-                  {parsedOperations.map((operation, index) => (
+                  {parsedOperations.map((operation: OperationAssignment, index: number) => (
                     <Card 
                       key={index} 
-                      className={`p-4 ${operation.validationErrors.length > 0 ? 'border-red-500 bg-red-50' : 'border-green-500 bg-green-50'}`}
+                      className={`p-4 ${transformationResult.errors.some((e: ValidationError) => e.rowIndex === index) ? 'border-red-500 bg-red-50' : 'border-green-500 bg-green-50'}`}
                     >
                       <div className="grid grid-cols-1 lg:grid-cols-6 gap-4 items-center">
                         <div className="flex items-center space-x-2">
@@ -546,11 +549,13 @@ const CSVImportPanel: React.FC<CSVImportPanelProps> = ({
                           <Badge className={`text-xs ${getComplexityColor(operation.complexity!)}`}>
                             {operation.complexity}
                           </Badge>
-                          {operation.validationErrors.length > 0 && (
+                          {transformationResult.errors.some((e: ValidationError) => e.rowIndex === index) && (
                             <div className="space-y-1">
-                              {operation.validationErrors.map((error, errorIndex) => (
+                              {transformationResult.errors
+                                .filter((e: ValidationError) => e.rowIndex === index)
+                                .map((error: ValidationError, errorIndex: number) => (
                                 <Badge key={errorIndex} variant="destructive" className="text-xs">
-                                  {error}
+                                  Fehler
                                 </Badge>
                               ))}
                             </div>
