@@ -16,69 +16,380 @@ import {
   TIME_SLOTS
 } from './or-planner-types';
 
-// Updated staff with department specializations
-export const STAFF_MEMBERS: StaffMember[] = [
+// Enhanced staff member type with German hospital expertise
+export interface GermanHospitalStaffMember extends StaffMember {
+  departmentExpertise: string[]; // German department specializations
+  germanSkills?: string[]; // German medical skills
+  experienceLevel: 'Berufsanfänger' | 'Erfahren' | 'Experte' | 'Leitungsfunktion';
+  certifications?: string[]; // Medical certifications
+}
+
+// Updated staff with German hospital department expertise
+export const STAFF_MEMBERS: GermanHospitalStaffMember[] = [
   { 
     id: 'staff_1', 
     name: 'Karin R.', 
     skills: ['Allgemein', 'Robotik'], 
-    departmentSpecializations: ['UCH', 'GYN', 'URO'] 
+    departmentSpecializations: ['UCH', 'GYN', 'URO'],
+    departmentExpertise: ['UCH', 'Orthopädie', 'Trauma'],
+    germanSkills: ['Implantate', 'Instrumentierung', 'DaVinci-Robotik'],
+    experienceLevel: 'Experte'
   },
   { 
     id: 'staff_2', 
     name: 'Fatima R.', 
     skills: ['Allgemein', 'Herz-Thorax'], 
-    departmentSpecializations: ['UCH', 'ACH'] 
+    departmentSpecializations: ['UCH', 'ACH'],
+    departmentExpertise: ['ACH', 'Allgemeinchirurgie', 'Notfallchirurgie'],
+    germanSkills: ['Laparoskopie', 'Endoskopie', 'Herz-Thorax'],
+    experienceLevel: 'Erfahren'
   },
   { 
     id: 'staff_3', 
     name: 'Gerhard K.', 
     skills: ['Allgemein', 'Neuro'], 
-    departmentSpecializations: ['UCH', 'ACH'] 
+    departmentSpecializations: ['UCH', 'ACH'],
+    departmentExpertise: ['UCH', 'Neurochirurgie', 'Wirbelsäule'],
+    germanSkills: ['Mikrochirurgie', 'Neuro-Navigation', 'Wirbelsäulen-Instrumentierung'],
+    experienceLevel: 'Experte'
   },
   { 
     id: 'staff_4', 
     name: 'Ulla K.', 
     skills: ['Allgemein', 'Robotik', 'Endoskopie'], 
-    departmentSpecializations: ['URO', 'GYN', 'GCH'] 
+    departmentSpecializations: ['URO', 'GYN', 'GCH'],
+    departmentExpertise: ['URO', 'Urologie', 'Endoskopie'],
+    germanSkills: ['TUR-P', 'Ureteroskopie', 'Nephroskopie', 'Laparoskopie'],
+    experienceLevel: 'Erfahren'
   },
   { 
     id: 'staff_5', 
     name: 'Michael B.', 
     skills: ['Allgemein'], 
-    departmentSpecializations: ['UCH', 'ACH', 'GCH'] 
+    departmentSpecializations: ['UCH', 'ACH', 'GCH'],
+    departmentExpertise: ['ACH', 'Allgemeinchirurgie'],
+    germanSkills: ['Grundversorgung', 'Allgemeine OP-Techniken'],
+    experienceLevel: 'Berufsanfänger'
   },
   { 
     id: 'staff_6', 
     name: 'Sandra P.', 
     skills: ['Allgemein', 'Gynäkologie'], 
-    departmentSpecializations: ['GYN', 'GCH'] 
+    departmentSpecializations: ['GYN', 'GCH'],
+    departmentExpertise: ['GYN', 'Gynäkologie', 'Geburtshilfe'],
+    germanSkills: ['Sectio', 'Hysterektomie', 'Laparoskopische Gynäkologie'],
+    experienceLevel: 'Erfahren'
   },
   { 
     id: 'staff_7', 
     name: 'Jürgen S.', 
     skills: ['Allgemein', 'Urologie'], 
-    departmentSpecializations: ['URO', 'GCH'] 
+    departmentSpecializations: ['URO', 'GCH'],
+    departmentExpertise: ['URO', 'Urologie'],
+    germanSkills: ['Prostatachirurgie', 'Steinentfernung', 'Ureteroskopie'],
+    experienceLevel: 'Erfahren'
   },
   { 
     id: 'staff_8', 
     name: 'Anja M.', 
     skills: ['Allgemein', 'Plastische Chirurgie'], 
-    departmentSpecializations: ['PCH', 'GCH'] 
+    departmentSpecializations: ['PCH', 'GCH'],
+    departmentExpertise: ['PCH', 'Plastische Chirurgie', 'Ästhetische Chirurgie'],
+    germanSkills: ['Mikrochirurgie', 'Lappenplastik', 'Mammachirurgie'],
+    experienceLevel: 'Experte'
   },
   { 
     id: 'staff_9', 
     name: 'Thomas L.', 
     skills: ['Allgemein'], 
-    departmentSpecializations: ['UCH', 'ACH', 'GCH', 'PCH'] 
+    departmentSpecializations: ['UCH', 'ACH', 'GCH', 'PCH'],
+    departmentExpertise: ['Allgemein', 'Springer'],
+    germanSkills: ['Flexibler Einsatz', 'Grundversorgung', 'Dokumentation'],
+    experienceLevel: 'Erfahren'
   },
   { 
     id: 'staff_10', 
     name: 'Sabine W.', 
     skills: ['Allgemein', 'HNO'], 
-    departmentSpecializations: ['UCH', 'GCH'] 
+    departmentSpecializations: ['UCH', 'GCH'],
+    departmentExpertise: ['UCH', 'HNO', 'Kopf-Hals-Chirurgie'],
+    germanSkills: ['HNO-Instrumente', 'Endoskopie', 'Mikrochirurgie'],
+    experienceLevel: 'Erfahren'
   },
 ];
+
+// Department-specific staff requirements for German hospitals
+export const DEPARTMENT_STAFF_REQUIREMENTS: Record<string, {
+  preferredExpertise: string[];
+  minimumExperienceLevel: string;
+  requiredSkills: string[];
+  complexityRequirements: Record<OperationComplexity, {
+    leadRequirements: string[];
+    supportRequirements: string[];
+  }>;
+}> = {
+  'UCH': {
+    preferredExpertise: ['UCH', 'Orthopädie', 'Trauma', 'Unfallchirurgie'],
+    minimumExperienceLevel: 'Erfahren',
+    requiredSkills: ['Implantate', 'Instrumentierung'],
+    complexityRequirements: {
+      'Sehr Hoch': {
+        leadRequirements: ['UCH', 'Wirbelsäule', 'Neurochirurgie'],
+        supportRequirements: ['UCH', 'Orthopädie']
+      },
+      'Hoch': {
+        leadRequirements: ['UCH', 'Orthopädie'],
+        supportRequirements: ['UCH', 'Allgemein']
+      },
+      'Mittel': {
+        leadRequirements: ['UCH'],
+        supportRequirements: ['Allgemein']
+      },
+      'Niedrig': {
+        leadRequirements: ['UCH', 'Allgemein'],
+        supportRequirements: ['Allgemein']
+      }
+    }
+  },
+  'ACH': {
+    preferredExpertise: ['ACH', 'Allgemeinchirurgie', 'Bauchschirurgie'],
+    minimumExperienceLevel: 'Erfahren',
+    requiredSkills: ['Laparoskopie', 'Endoskopie'],
+    complexityRequirements: {
+      'Sehr Hoch': {
+        leadRequirements: ['ACH', 'Onkologie', 'Tumorchirurgie'],
+        supportRequirements: ['ACH', 'Allgemeinchirurgie']
+      },
+      'Hoch': {
+        leadRequirements: ['ACH', 'Allgemeinchirurgie'],
+        supportRequirements: ['ACH', 'Allgemein']
+      },
+      'Mittel': {
+        leadRequirements: ['ACH'],
+        supportRequirements: ['Allgemein']
+      },
+      'Niedrig': {
+        leadRequirements: ['ACH', 'Allgemein'],
+        supportRequirements: ['Allgemein']
+      }
+    }
+  },
+  'GYN': {
+    preferredExpertise: ['GYN', 'Gynäkologie', 'Geburtshilfe'],
+    minimumExperienceLevel: 'Erfahren',
+    requiredSkills: ['Laparoskopische Gynäkologie', 'Sectio'],
+    complexityRequirements: {
+      'Sehr Hoch': {
+        leadRequirements: ['GYN', 'Onkologische Gynäkologie'],
+        supportRequirements: ['GYN', 'Gynäkologie']
+      },
+      'Hoch': {
+        leadRequirements: ['GYN', 'Gynäkologie'],
+        supportRequirements: ['GYN', 'Geburtshilfe']
+      },
+      'Mittel': {
+        leadRequirements: ['GYN'],
+        supportRequirements: ['Allgemein']
+      },
+      'Niedrig': {
+        leadRequirements: ['GYN', 'Allgemein'],
+        supportRequirements: ['Allgemein']
+      }
+    }
+  },
+  'URO': {
+    preferredExpertise: ['URO', 'Urologie'],
+    minimumExperienceLevel: 'Erfahren',
+    requiredSkills: ['Endoskopie', 'TUR-P', 'Ureteroskopie'],
+    complexityRequirements: {
+      'Sehr Hoch': {
+        leadRequirements: ['URO', 'Robotik', 'DaVinci'],
+        supportRequirements: ['URO', 'Urologie']
+      },
+      'Hoch': {
+        leadRequirements: ['URO', 'Urologie'],
+        supportRequirements: ['URO', 'Endoskopie']
+      },
+      'Mittel': {
+        leadRequirements: ['URO'],
+        supportRequirements: ['Allgemein']
+      },
+      'Niedrig': {
+        leadRequirements: ['URO', 'Allgemein'],
+        supportRequirements: ['Allgemein']
+      }
+    }
+  },
+  'GCH': {
+    preferredExpertise: ['GCH', 'Gefäßchirurgie'],
+    minimumExperienceLevel: 'Erfahren',
+    requiredSkills: ['Gefäßchirurgie', 'Mikroinstrumente'],
+    complexityRequirements: {
+      'Sehr Hoch': {
+        leadRequirements: ['GCH', 'Mikrochirurgie'],
+        supportRequirements: ['GCH', 'Gefäßchirurgie']
+      },
+      'Hoch': {
+        leadRequirements: ['GCH', 'Gefäßchirurgie'],
+        supportRequirements: ['GCH', 'Allgemein']
+      },
+      'Mittel': {
+        leadRequirements: ['GCH'],
+        supportRequirements: ['Allgemein']
+      },
+      'Niedrig': {
+        leadRequirements: ['GCH', 'Allgemein'],
+        supportRequirements: ['Allgemein']
+      }
+    }
+  },
+  'PCH': {
+    preferredExpertise: ['PCH', 'Plastische Chirurgie', 'Ästhetische Chirurgie'],
+    minimumExperienceLevel: 'Erfahren',
+    requiredSkills: ['Mikrochirurgie', 'Lappenplastik'],
+    complexityRequirements: {
+      'Sehr Hoch': {
+        leadRequirements: ['PCH', 'Mikrochirurgie', 'Rekonstruktive Chirurgie'],
+        supportRequirements: ['PCH', 'Plastische Chirurgie']
+      },
+      'Hoch': {
+        leadRequirements: ['PCH', 'Plastische Chirurgie'],
+        supportRequirements: ['PCH', 'Ästhetische Chirurgie']
+      },
+      'Mittel': {
+        leadRequirements: ['PCH'],
+        supportRequirements: ['Allgemein']
+      },
+      'Niedrig': {
+        leadRequirements: ['PCH', 'Allgemein'],
+        supportRequirements: ['Allgemein']
+      }
+    }
+  }
+};
+
+// Get staff members by department expertise
+export function getStaffByDepartmentExpertise(department: string): GermanHospitalStaffMember[] {
+  return STAFF_MEMBERS.filter(staff => 
+    !staff.isSick && 
+    staff.departmentExpertise.some(expertise => 
+      expertise.toLowerCase().includes(department.toLowerCase()) ||
+      department.toLowerCase().includes(expertise.toLowerCase())
+    )
+  );
+}
+
+// Get optimal staff pairing for specific department and complexity
+export function getOptimalStaffPairing(
+  department: Department, 
+  complexity: OperationComplexity,
+  excludeStaff: string[] = []
+): { lead: GermanHospitalStaffMember | null, support: GermanHospitalStaffMember | null } {
+  
+  const requirements = DEPARTMENT_STAFF_REQUIREMENTS[department];
+  if (!requirements) {
+    return { lead: null, support: null };
+  }
+
+  const availableStaff = getStaffByDepartmentExpertise(department)
+    .filter(staff => !excludeStaff.includes(staff.name));
+
+  const complexityReq = requirements.complexityRequirements[complexity];
+  
+  // Find lead staff member
+  const leadCandidates = availableStaff.filter(staff =>
+    complexityReq.leadRequirements.some(req => 
+      staff.departmentExpertise.includes(req) ||
+      (staff.germanSkills && staff.germanSkills.some(skill => skill.includes(req)))
+    )
+  );
+
+  // Sort by experience level
+  const experienceOrder = { 'Leitungsfunktion': 4, 'Experte': 3, 'Erfahren': 2, 'Berufsanfänger': 1 };
+  leadCandidates.sort((a, b) => experienceOrder[b.experienceLevel] - experienceOrder[a.experienceLevel]);
+  
+  const lead = leadCandidates[0] || null;
+  
+  // Find support staff member (excluding the lead)
+  const supportCandidates = availableStaff
+    .filter(staff => staff.id !== lead?.id)
+    .filter(staff =>
+      complexityReq.supportRequirements.some(req => 
+        staff.departmentExpertise.includes(req) ||
+        (staff.germanSkills && staff.germanSkills.some(skill => skill.includes(req)))
+      )
+    );
+
+  supportCandidates.sort((a, b) => experienceOrder[b.experienceLevel] - experienceOrder[a.experienceLevel]);
+  const support = supportCandidates[0] || null;
+
+  return { lead, support };
+}
+
+// Get staff workload for a given day
+export function getStaffWorkload(staffName: string, assignments: OperationAssignment[]): {
+  operationCount: number;
+  totalDuration: number;
+  timeSlots: string[];
+  departments: string[];
+} {
+  const staffAssignments = assignments.filter(op => 
+    op.assignedStaff.some(staff => staff.name === staffName)
+  );
+
+  return {
+    operationCount: staffAssignments.length,
+    totalDuration: staffAssignments.reduce((sum, op) => sum + (op.estimatedDuration || 90), 0),
+    timeSlots: staffAssignments.map(op => op.scheduledTime).sort(),
+    departments: [...new Set(staffAssignments.map(op => op.department))]
+  };
+}
+
+// Check if staff member is qualified for specific procedure
+export function isStaffQualifiedForProcedure(
+  staff: GermanHospitalStaffMember, 
+  department: Department, 
+  procedureName: string,
+  complexity: OperationComplexity
+): boolean {
+  // Check department expertise
+  const hasDepartmentExpertise = staff.departmentExpertise.some(expertise =>
+    expertise === department || 
+    expertise.toLowerCase().includes(department.toLowerCase())
+  );
+
+  if (!hasDepartmentExpertise && complexity !== 'Niedrig') {
+    return false;
+  }
+
+  // Check experience level requirements
+  const requirements = DEPARTMENT_STAFF_REQUIREMENTS[department];
+  if (requirements) {
+    const experienceOrder = { 'Leitungsfunktion': 4, 'Experte': 3, 'Erfahren': 2, 'Berufsanfänger': 1 };
+    const minExperience = experienceOrder[requirements.minimumExperienceLevel as keyof typeof experienceOrder] || 1;
+    const staffExperience = experienceOrder[staff.experienceLevel];
+    
+    if (staffExperience < minExperience && complexity === 'Sehr Hoch') {
+      return false;
+    }
+  }
+
+  // Check procedure-specific skills
+  const procedureLower = procedureName.toLowerCase();
+  if (staff.germanSkills) {
+    const hasRelevantSkill = staff.germanSkills.some(skill =>
+      procedureLower.includes(skill.toLowerCase()) ||
+      skill.toLowerCase().includes(procedureLower.substring(0, 6)) // Partial match
+    );
+    
+    if (hasRelevantSkill) {
+      return true;
+    }
+  }
+
+  // Default qualification based on department and experience
+  return hasDepartmentExpertise;
+}
 
 // Mapping which departments typically use which rooms
 export const ROOM_DEPARTMENT_MAPPING: Record<OperatingRoomName, Department[]> = {
@@ -102,322 +413,16 @@ export const DEPARTMENT_PRIORITY: Record<Department, number> = {
   'PCH': 6, // Plastic surgery
 };
 
-// Sample operations template matching real hospital data structure
-const SAMPLE_OPERATIONS_TEMPLATE: {
-  room: OperatingRoomName;
-  department: Department;
-  scheduledTime: string;
-  procedureName: string;
-  primarySurgeon: string;
-  complexity: OperationComplexity;
-  estimatedDuration: number;
-}[] = [
-  // SAAL 1 - UCH (Orthopedics/Trauma)
-  { 
-    room: 'SAAL 1', 
-    department: 'UCH', 
-    scheduledTime: '07:30', 
-    procedureName: 'Hüft-TEP rechts', 
-    primarySurgeon: 'Dr. Weber',
-    complexity: 'Hoch',
-    estimatedDuration: 180
-  },
-  { 
-    room: 'SAAL 1', 
-    department: 'UCH', 
-    scheduledTime: '11:00', 
-    procedureName: 'Knie-Arthroskopie links', 
-    primarySurgeon: 'Dr. Schmidt',
-    complexity: 'Mittel',
-    estimatedDuration: 90
-  },
-  
-  // SAAL 2 - ACH (General Surgery)
-  { 
-    room: 'SAAL 2', 
-    department: 'ACH', 
-    scheduledTime: '08:00', 
-    procedureName: 'Laparoskopische Cholezystektomie', 
-    primarySurgeon: 'Dr. Müller',
-    complexity: 'Hoch',
-    estimatedDuration: 120
-  },
-  { 
-    room: 'SAAL 2', 
-    department: 'ACH', 
-    scheduledTime: '10:30', 
-    procedureName: 'Appendektomie', 
-    primarySurgeon: 'Dr. Hoffmann',
-    complexity: 'Mittel',
-    estimatedDuration: 90
-  },
-  
-  // SAAL 3 - GYN (Gynecology)
-  { 
-    room: 'SAAL 3', 
-    department: 'GYN', 
-    scheduledTime: '07:30', 
-    procedureName: 'Elektive Sectio', 
-    primarySurgeon: 'Dr. Fischer',
-    complexity: 'Hoch',
-    estimatedDuration: 45
-  },
-  { 
-    room: 'SAAL 3', 
-    department: 'GYN', 
-    scheduledTime: '09:00', 
-    procedureName: 'Hysteroskopie', 
-    primarySurgeon: 'Dr. Bauer',
-    complexity: 'Mittel',
-    estimatedDuration: 60
-  },
-  
-  // SAAL 4 - URO (Urology)
-  { 
-    room: 'SAAL 4', 
-    department: 'URO', 
-    scheduledTime: '08:00', 
-    procedureName: 'TUR-P', 
-    primarySurgeon: 'Dr. Wagner',
-    complexity: 'Hoch',
-    estimatedDuration: 90
-  },
-  { 
-    room: 'SAAL 4', 
-    department: 'URO', 
-    scheduledTime: '10:00', 
-    procedureName: 'Ureteroskopie mit Steinextraktion', 
-    primarySurgeon: 'Dr. Koch',
-    complexity: 'Hoch',
-    estimatedDuration: 120
-  },
-  
-  // SAAL 5 - GCH (General/Day Surgery)
-  { 
-    room: 'SAAL 5', 
-    department: 'GCH', 
-    scheduledTime: '07:30', 
-    procedureName: 'Varizen-Stripping', 
-    primarySurgeon: 'Dr. Richter',
-    complexity: 'Niedrig',
-    estimatedDuration: 60
-  },
-  { 
-    room: 'SAAL 5', 
-    department: 'GCH', 
-    scheduledTime: '09:00', 
-    procedureName: 'Hernioplastik', 
-    primarySurgeon: 'Dr. Klein',
-    complexity: 'Mittel',
-    estimatedDuration: 90
-  },
-  
-  // SAAL 6 - PCH (Plastic Surgery)
-  { 
-    room: 'SAAL 6', 
-    department: 'PCH', 
-    scheduledTime: '08:00', 
-    procedureName: 'Mammareduktion', 
-    primarySurgeon: 'Dr. Lange',
-    complexity: 'Hoch',
-    estimatedDuration: 180
-  },
-  { 
-    room: 'SAAL 6', 
-    department: 'PCH', 
-    scheduledTime: '12:00', 
-    procedureName: 'Lipom-Exzision', 
-    primarySurgeon: 'Dr. Zimmermann',
-    complexity: 'Niedrig',
-    estimatedDuration: 30
-  },
-  
-  // SAAL 7 - Mixed UCH/GCH
-  { 
-    room: 'SAAL 7', 
-    department: 'UCH', 
-    scheduledTime: '09:00', 
-    procedureName: 'Osteosynthese Radius', 
-    primarySurgeon: 'Dr. Huber',
-    complexity: 'Mittel',
-    estimatedDuration: 120
-  },
-  
-  // SAAL 8 - Mixed ACH/GCH
-  { 
-    room: 'SAAL 8', 
-    department: 'ACH', 
-    scheduledTime: '08:30', 
-    procedureName: 'Sigmaresektion', 
-    primarySurgeon: 'Dr. Schuster',
-    complexity: 'Sehr Hoch',
-    estimatedDuration: 240
-  },
-];
-
-export const INITIAL_SCHEDULE_TEMPLATE = (targetDate: string = '2025-07-11'): ORSchedule => {
-  const schedule = {} as ORSchedule;
-  
-  // Initialize all rooms
-  OPERATING_ROOMS.forEach(room => {
-    schedule[room] = {};
-    schedule[room][targetDate] = [];
-  });
-  
-  // Add sample operations
-  SAMPLE_OPERATIONS_TEMPLATE.forEach(templateOp => {
-    const operation: OperationAssignment = {
-      id: `${templateOp.room}-${targetDate}-${templateOp.scheduledTime}`,
-      room: templateOp.room,
-      department: templateOp.department,
-      scheduledDate: targetDate,
-      scheduledTime: templateOp.scheduledTime,
-      procedureName: templateOp.procedureName,
-      primarySurgeon: templateOp.primarySurgeon,
-      complexity: templateOp.complexity,
-      estimatedDuration: templateOp.estimatedDuration,
-      assignedStaff: [], // Initialize as empty - AI will suggest staff
-      gptSuggestedStaff: [],
-      status: 'planned' as AssignmentStatus,
-      notes: undefined,
-      // Add backward compatibility shift mapping for UI
-      shift: mapTimeToShift(templateOp.scheduledTime)
-    };
-    
-    schedule[templateOp.room][targetDate].push(operation);
-  });
-  
-  return schedule;
-};
-
-// Helper function to map time to shift for backward compatibility
-function mapTimeToShift(time: string): 'BD1' | 'BD2' | 'BD3' | 'RD' {
-  const hour = parseInt(time.split(':')[0]);
-  if (hour >= 6 && hour < 12) return 'BD1';
-  if (hour >= 12 && hour < 16) return 'BD2';  
-  if (hour >= 16 && hour < 20) return 'BD3';
-  return 'RD';
-}
-
-// Function to parse CSV data into our operation format
-export function parseHospitalCSV(csvData: HospitalCSVRow[]): ORSchedule {
-  const schedule = {} as ORSchedule;
-  
-  // Initialize empty schedule
-  OPERATING_ROOMS.forEach(room => {
-    schedule[room] = {};
-  });
-  
-  csvData.forEach((row, index) => {
-    // Clean and validate room name
-    const roomMatch = row['OP-Saal'].match(/SAAL (\d+)/);
-    if (!roomMatch) {
-      console.warn(`Invalid room format: ${row['OP-Saal']}`);
-      return;
-    }
-    
-    const room = `SAAL ${roomMatch[1]}` as OperatingRoomName;
-    if (!OPERATING_ROOMS.includes(room)) {
-      console.warn(`Unknown room: ${room}`);
-      return;
-    }
-    
-    // Parse and validate date
-    const date = row.Datum;
-    if (!date) {
-      console.warn(`Missing date for row ${index}`);
-      return;
-    }
-    
-    // Initialize date for room if not exists
-    if (!schedule[room][date]) {
-      schedule[room][date] = [];
-    }
-    
-    // Map CSV status to internal status
-    const status = CSV_STATUS_MAPPING[row['OP-Status']] || 'planned';
-    
-    // Estimate duration based on procedure
-    const procedureName = row.Eingriff;
-    const estimatedDuration = STANDARD_OPERATION_DURATIONS[procedureName] || 
-                             STANDARD_OPERATION_DURATIONS.default;
-    
-    // Determine complexity based on procedure name (simple heuristic)
-    const complexity = determineComplexity(procedureName);
-    
-    const operation: OperationAssignment = {
-      id: `${room}-${date}-${row.Zeit}`,
-      room,
-      department: row['OP-Orgaeinheit'],
-      scheduledDate: date,
-      scheduledTime: row.Zeit,
-      procedureName,
-      primarySurgeon: row['1.Operateur'],
-      estimatedDuration,
-      complexity,
-      assignedStaff: [],
-      gptSuggestedStaff: [],
-      status,
-      notes: row.Anmerkung,
-      shift: mapTimeToShift(row.Zeit)
-    };
-    
-    schedule[room][date].push(operation);
-  });
-  
-  return schedule;
-}
-
-// Simple heuristic to determine operation complexity
-function determineComplexity(procedureName: string): OperationComplexity {
-  const name = procedureName.toLowerCase();
-  
-  if (name.includes('robot') || name.includes('davinci') || 
-      name.includes('herzklappen') || name.includes('bypass') ||
-      name.includes('neurochirurg') || name.includes('wirbelsäule')) {
-    return 'Sehr Hoch';
-  }
-  
-  if (name.includes('laparoskop') || name.includes('endoskop') ||
-      name.includes('tep') || name.includes('arthros') ||
-      name.includes('tumor') || name.includes('resektion')) {
-    return 'Hoch';
-  }
-  
-  if (name.includes('appendek') || name.includes('hernien') ||
-      name.includes('gallenblas') || name.includes('sectio') ||
-      name.includes('hysteroskop')) {
-    return 'Mittel';
-  }
-  
-  return 'Niedrig';
-}
-
-// Get staff members specialized for a specific department
-export function getStaffForDepartment(department: Department): StaffMember[] {
-  return STAFF_MEMBERS.filter(staff => 
-    !staff.isSick && 
-    (staff.departmentSpecializations?.includes(department) || false)
-  );
-}
-
-// Get available rooms for a department
-export function getRoomsForDepartment(department: Department): OperatingRoomName[] {
-  return OPERATING_ROOMS.filter(room => 
-    ROOM_DEPARTMENT_MAPPING[room]?.includes(department)
-  );
-}
-
 // Helper functions for backward compatibility
-export const getStaffMemberById = (id: string): StaffMember | undefined => 
+export const getStaffMemberById = (id: string): GermanHospitalStaffMember | undefined => 
   STAFF_MEMBERS.find(s => s.id === id);
 
-export const getStaffMemberByName = (name: string): StaffMember | undefined => 
+export const getStaffMemberByName = (name: string): GermanHospitalStaffMember | undefined => 
   STAFF_MEMBERS.find(s => s.name === name);
 
 // Dynamic staff lists for AI (no longer static as staff availability can change)
-export const getAvailableStaffForAI = (): string[] => 
-  STAFF_MEMBERS.filter(s => !s.isSick).map(s => s.name);
+export const getAvailableStaffForAI = (): GermanHospitalStaffMember[] => 
+  STAFF_MEMBERS.filter(s => !s.isSick);
 
 export const getSickStaffForAI = (): string[] => 
   STAFF_MEMBERS.filter(s => s.isSick).map(s => s.name);
