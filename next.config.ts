@@ -3,10 +3,12 @@ import type {NextConfig} from 'next';
 const nextConfig: NextConfig = {
   /* config options here */
   typescript: {
-    ignoreBuildErrors: true,
+    // Only ignore build errors in development, not production
+    ignoreBuildErrors: process.env.NODE_ENV === 'development',
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    // Only ignore during builds in development
+    ignoreDuringBuilds: process.env.NODE_ENV === 'development',
   },
   images: {
     remotePatterns: [
@@ -18,7 +20,25 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  output: 'standalone', // Add this for optimized production builds
+  output: 'standalone',
+  // Add experimental features for better error handling
+  experimental: {
+    // Enable better error overlay
+    typedRoutes: false,
+  },
+  // Add webpack configuration for better module resolution
+  webpack: (config, { isServer }) => {
+    // Fix for potential module resolution issues
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        os: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
