@@ -31,54 +31,59 @@ const STORAGE_KEYS = {
   DATA_SOURCE_INFO: 'nexus_or_data_source'
 } as const;
 
-// Demo data generator function
+// Demo data generator function - FIXED to match OperationAssignment type
 const generateDemoSchedule = (): TimeBasedORSchedule => {
   const demoSchedule = {} as TimeBasedORSchedule;
+  const currentDate = new Date().toISOString().split('T')[0];
   
-  OPERATING_ROOMS.forEach(room => {
+  OPERATING_ROOMS.forEach((room, index) => {
     demoSchedule[room] = {};
     
-    // Add some demo operations
-    const operations = [
-      {
-        id: `${room}-08-00`,
-        patientName: "Max Mustermann",
-        operationType: "Appendektomie",
-        department: "Chirurgie" as Department,
-        surgeon: "Dr. Schmidt",
-        scheduledTime: "08:00",
-        duration: "90",
-        room: room,
-        assignedStaff: [
-          { staffId: "staff-1", name: "Dr. Schmidt", role: "Surgeon" },
-          { staffId: "staff-2", name: "S. Müller", role: "Nurse" }
-        ],
-        status: "gpt_suggested" as const,
-        priority: "medium" as const,
-        notes: "Routine operation"
-      },
-      {
-        id: `${room}-10-30`,
-        patientName: "Anna Weber",
-        operationType: "Gallenblasen-OP",
-        department: "Chirurgie" as Department,
-        surgeon: "Dr. Weber",
-        scheduledTime: "10:30",
-        duration: "120",
-        room: room,
-        assignedStaff: [
-          { staffId: "staff-3", name: "Dr. Weber", role: "Surgeon" },
-          { staffId: "staff-4", name: "P. Klein", role: "Anesthesiologist" }
-        ],
-        status: "approved_julia" as const,
-        priority: "high" as const,
-        notes: "Urgent case"
-      }
-    ];
-    
-    operations.forEach(op => {
-      demoSchedule[room][op.scheduledTime] = op;
-    });
+    // Add demo operations that match the OperationAssignment interface
+    if (index < 4) { // Only add to first 4 rooms to avoid clutter
+      const operations: OperationAssignment[] = [
+        {
+          id: `${room}-08-00`,
+          room: room,
+          department: "UCH" as Department,
+          scheduledDate: currentDate,
+          scheduledTime: "08:00",
+          procedureName: "Hüft-TEP",
+          primarySurgeon: "Dr. Schmidt",
+          patientCase: "Max Mustermann - Hüftarthrose",
+          estimatedDuration: 180,
+          complexity: "Hoch",
+          assignedStaff: [
+            { id: "staff_1", name: "Karin R.", skills: ["Allgemein", "Robotik"] },
+            { id: "staff_2", name: "Fatima R.", skills: ["Allgemein", "Herz-Thorax"] }
+          ],
+          status: "planned",
+          notes: "Routine operation"
+        },
+        {
+          id: `${room}-10-30`,
+          room: room,
+          department: "GYN" as Department,
+          scheduledDate: currentDate,
+          scheduledTime: "10:30",
+          procedureName: "Hysterektomie",
+          primarySurgeon: "Dr. Weber",
+          patientCase: "Anna Weber - Myome",
+          estimatedDuration: 150,
+          complexity: "Mittel",
+          assignedStaff: [
+            { id: "staff_6", name: "Sandra P.", skills: ["Allgemein", "Gynäkologie"] },
+            { id: "staff_9", name: "Thomas L.", skills: ["Allgemein"] }
+          ],
+          status: "approved_julia",
+          notes: "Laparoskopisch"
+        }
+      ];
+      
+      operations.forEach(op => {
+        demoSchedule[room][op.scheduledTime] = op;
+      });
+    }
   });
   
   return demoSchedule;
@@ -281,15 +286,12 @@ export function useORData() {
       return newSchedule;
     });
 
+    // FIXED: Use correct JuliaOverride structure
     const override: JuliaOverride = {
-      id: `override-${Date.now()}`,
       operationId,
-      originalValue: "Previous assignment",
-      newValue: "Modified assignment",
-      field: "staff",
-      reason: "Julia's modification",
-      timestamp: new Date().toISOString(),
-      confidence: 95
+      originalSuggestion: ["Previous staff"],
+      juliaSelection: ["Modified staff"],
+      reason: "Julia's modification"
     };
     
     setJuliaOverrides(prev => [...prev, override]);
@@ -306,7 +308,8 @@ export function useORData() {
       // Simulate AI optimization
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      setCurrentWorkflowStepKey('AI_SUGGESTIONS_GENERATED');
+      // FIXED: Use valid WorkflowStepKey
+      setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
       setAiRawLearningSummary("GPT-4 hat neue Optimierungsvorschläge generiert basierend auf aktuellen Daten und Julias Präferenzen.");
       
       toast({
