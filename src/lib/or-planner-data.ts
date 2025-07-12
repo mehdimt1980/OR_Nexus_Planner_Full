@@ -1013,49 +1013,7 @@ export const getDepartmentWorkload = (
   };
 };
 
-// Get department workload statistics
-export const getDepartmentWorkload = (
-  schedule: ORSchedule,
-  date: string,
-  department: Department
-): {
-  operations: OperationAssignment[];
-  totalMinutes: number;
-  averageComplexity: number;
-  roomsUsed: OperatingRoomName[];
-} => {
-  const allOperations = getOperationsForDate(schedule, date);
-  const departmentOperations = allOperations.filter(
-    operation => operation.department === department
-  );
-  
-  const totalMinutes = departmentOperations.reduce((total, operation) => {
-    return total + (operation.timeSlot.duration || 60);
-  }, 0);
-  
-  const complexityScores = departmentOperations.map(operation => {
-    switch (operation.complexity) {
-      case 'Sehr Hoch': return 4;
-      case 'Hoch': return 3;
-      case 'Mittel': return 2;
-      case 'Niedrig': return 1;
-      default: return 2;
-    }
-  });
-  
-  const averageComplexity = complexityScores.length > 0 
-    ? complexityScores.reduce((sum, score) => sum + score, 0) / complexityScores.length
-    : 0;
-  
-  const roomsUsed = [...new Set(departmentOperations.map(op => op.room))];
-  
-  return {
-    operations: departmentOperations,
-    totalMinutes,
-    averageComplexity,
-    roomsUsed
-  };
-};
+
 
 // Legacy compatibility: Create initial empty schedule
 export const INITIAL_SCHEDULE_TEMPLATE = (): ORSchedule => {
