@@ -1,332 +1,439 @@
 "use client";
-import React, { useState, useCallback } from 'react';
-import Header from '@/components/or-planner/Header';
-import WorkflowStatusIndicator from '@/components/or-planner/WorkflowStatusIndicator';
-import DashboardStats from '@/components/or-planner/DashboardStats';
-import OperatingRoomScheduleTable from '@/components/or-planner/OperatingRoomScheduleTable';
-import AiAssistantPanel from '@/components/or-planner/AiAssistantPanel';
-import JuliaRecommendationsPanel from '@/components/or-planner/JuliaRecommendationsPanel';
-import AssignmentModal from '@/components/or-planner/AssignmentModal';
-import CSVImportPanel from '@/components/or-planner/CSVImportPanel';
-import { useORData } from '@/hooks/useORData';
-import { STAFF_MEMBERS } from '@/lib/or-planner-data';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Info, 
-  Upload, 
-  Database, 
-  PlayCircle, 
-  X,
-  FileText,
-  Calendar,
-  Users
-} from 'lucide-react';
-import type { OperationAssignment } from '@/lib/or-planner-types';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type {
+  ORSchedule,
+  StaffMember,
+  OperationAssignment,
+  WorkflowStep,
+  WorkflowStepKey,
+  JuliaOverride,
+  OperatingRoomName,
+  Department,
+} from '@/lib/or-planner-types';
+import { ALL_WORKFLOW_STEPS, OPERATING_ROOMS } from '@/lib/or-planner-types';
+import { STAFF_MEMBERS as INITIAL_STAFF_MEMBERS } from '@/lib/or-planner-data';
+import { useToast } from "@/hooks/use-toast";
+import type { CriticalSituationData, OptimizationSuggestionItem } from '@/components/or-planner/JuliaRecommendationsPanel';
+import type { LearningProgressItem } from '@/components/or-planner/AiAssistantPanel';
+import { Brain, TrendingUp, Settings2 } from 'lucide-react';
 
-type DataMode = 'demo' | 'imported';
+const TOTAL_ASSIGNMENTS_FOR_JULIA = 19;
 
-export default function ORNexusPlannerPage() {
-  const [dataMode, setDataMode] = useState<DataMode>('demo');
-  const [showImportPanel, setShowImportPanel] = useState(false);
-  const [importedDataInfo, setImportedDataInfo] = useState<{
-    fileName: string;
-    operationCount: number;
-    importDate: string;
-  } | null>(null);
+// Time-based schedule type: room -> timeSlot -> operation
+type TimeBasedORSchedule = Record<OperatingRoomName, Record<string, OperationAssignment>>;
 
-  const {
+// Local storage keys
+const STORAGE_KEYS = {
+  SCHEDULE: 'nexus_or_schedule',
+  PLAN_HISTORY: 'nexus_or_plan_history',
+  WORKFLOW_STATE: 'nexus_or_workflow',
+  JULIA_OVERRIDES: 'nexus_or_julia_overrides',
+  DATA_SOURCE_INFO: 'nexus_or_data_source'
+} as const;
+
+// Demo data generator function - FIXED to match OperationAssignment type
+const generateDemoSchedule = (): TimeBasedORSchedule => {
+  const demoSchedule = {} as TimeBasedORSchedule;
+  const currentDate = new Date().toISOString().split('T')[0];
+  
+  OPERATING_ROOMS.forEach((room, index) => {
+    demoSchedule[room] = {};
+    
+    // Add demo operations that match the OperationAssignment interface
+    if (index < 4) { // Only add to first 4 rooms to avoid clutter
+      const operations: OperationAssignment[] = [
+        {
+          id: `${room}-08-00`,
+          room: room,
+          department: "UCH" as Department,
+          scheduledDate: currentDate,
+          scheduledTime: "08:00",
+          procedureName: "Hüft-TEP",
+          primarySurgeon: "Dr. Schmidt",
+          patientCase: "Max Mustermann - Hüftarthrose",
+          estimatedDuration: 180,
+          complexity: "Hoch",
+          assignedStaff: [
+            { id: "staff_1", name: "Karin R.", skills: ["Allgemein", "Robotik"] },
+            { id: "staff_2", name: "Fatima R.", skills: ["Allgemein", "Herz-Thorax"] }
+          ],
+          status: "planned",
+          notes: "Routine operation"
+        },
+        {
+          id: `${room}-10-30`,
+          room: room,
+          department: "GYN" as Department,
+          scheduledDate: currentDate,
+          scheduledTime: "10:30",
+          procedureName: "Hysterektomie",
+          primarySurgeon: "Dr. Weber",
+          patientCase: "Anna Weber - Myome",
+          estimatedDuration: 150,
+          complexity: "Mittel",
+          assignedStaff: [
+            { id: "staff_6", name: "Sandra P.", skills: ["Allgemein", "Gynäkologie"] },
+            { id: "staff_9", name: "Thomas L.", skills: ["Allgemein"] }
+          ],
+          status: "approved_julia",
+          notes: "Laparoskopisch"
+        }
+      ];
+      
+      operations.forEach(op => {
+        demoSchedule[room][op.scheduledTime] = op;
+      });
+    }
+  });
+  
+  return demoSchedule;
+};
+
+export function useORData() {
+  const [isClient, setIsClient] = useState(false);
+  const [schedule, setSchedule] = useState<TimeBasedORSchedule>(() => {
+    const emptySchedule = {} as TimeBasedORSchedule;
+    OPERATING_ROOMS.forEach(room => {
+      emptySchedule[room] = {};
+    });
+    return emptySchedule;
+  });
+  
+  const [staff, setStaff] = useState<StaffMember[]>(() => JSON.parse(JSON.stringify(INITIAL_STAFF_MEMBERS)));
+  const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState<WorkflowStepKey>('PLAN_CREATED');
+  const [previousWorkflowStepKey, setPreviousWorkflowStepKey] = useState<WorkflowStepKey | null>(null);
+  const [aiRawLearningSummary, setAiRawLearningSummary] = useState<string>("KI lernt aus Julias Anpassungen...");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [selectedOperation, setSelectedOperation] = useState<OperationAssignment | null>(null);
+  const [juliaOverrides, setJuliaOverrides] = useState<JuliaOverride[]>([]);
+  const [currentDate, setCurrentDate] = useState<string>('');
+  
+  const [dataSourceInfo, setDataSourceInfo] = useState<{
+    type: 'demo' | 'imported' | 'mixed';
+    fileName?: string;
+    importDate?: string;
+    lastModified?: string;
+  }>({ type: 'demo' });
+  
+  const { toast } = useToast();
+
+  // Critical situation and optimization data
+  const [criticalSituationData] = useState<CriticalSituationData>({
+    title: "Kritische Situation: Personalengpass",
+    situation: "Mehrere Operationen zur gleichen Zeit benötigen spezialisiertes Personal.",
+    gptSuggestion: "Personal flexibel zwischen Abteilungen umverteilen und Prioritäten setzen.",
+    alternative: "Weniger kritische OPs verschieben oder mit weniger erfahrenem Personal unter Supervision durchführen.",
+  });
+
+  const [optimizationSuggestionsData] = useState<OptimizationSuggestionItem[]>([
+    { text: "Gleichmäßige Verteilung der Arbeitsbelastung über alle Räume prüfen", icon: Brain },
+    { text: "Optimierung der Operationszeiten für bessere Personalnutzung", icon: TrendingUp },
+    { text: "Reserve-Personal flexibel für kurzfristige Engpässe einsetzen", icon: Settings2 },
+    { text: "Zeitbasierte Planung zu 92% optimal - sehr gut!", icon: Settings2 },
+  ]);
+  
+  const [structuredLearningPoints] = useState<LearningProgressItem[]>([
+    { text: "Gelernt aus Julia's Entscheidungen: Präferenz für zeitoptimierte Personalzuordnung.", icon: Brain },
+    { text: "Verbesserung: +15% Genauigkeit bei der zeitbasierten Planung seit letzter Iteration.", icon: TrendingUp },
+    { text: "Nächste Optimierung: Berücksichtigung von Operationsdauer und Personalverfügbarkeit.", icon: Settings2 },
+  ]);
+
+  // Client-side effect to load saved data and set current date
+  useEffect(() => {
+    setIsClient(true);
+    setCurrentDate(new Date().toISOString().split('T')[0]);
+    
+    try {
+      const savedSchedule = localStorage.getItem(STORAGE_KEYS.SCHEDULE);
+      if (savedSchedule) {
+        const parsed = JSON.parse(savedSchedule);
+        setSchedule(parsed);
+      } else {
+        // Load demo data if no saved data
+        setSchedule(generateDemoSchedule());
+      }
+
+      const savedWorkflow = localStorage.getItem(STORAGE_KEYS.WORKFLOW_STATE);
+      if (savedWorkflow) {
+        const parsed = JSON.parse(savedWorkflow);
+        setCurrentWorkflowStepKey(parsed.currentStep || 'PLAN_CREATED');
+        setPreviousWorkflowStepKey(parsed.previousStep || null);
+      }
+
+      const savedOverrides = localStorage.getItem(STORAGE_KEYS.JULIA_OVERRIDES);
+      if (savedOverrides) {
+        setJuliaOverrides(JSON.parse(savedOverrides));
+      }
+
+      const savedDataSource = localStorage.getItem(STORAGE_KEYS.DATA_SOURCE_INFO);
+      if (savedDataSource) {
+        setDataSourceInfo(JSON.parse(savedDataSource));
+      }
+    } catch (error) {
+      console.warn('Failed to load saved data:', error);
+      // Fallback to demo data
+      setSchedule(generateDemoSchedule());
+    }
+  }, []);
+
+  // Get all operations as a flat list
+  const allAssignmentsList = useMemo(() => {
+    const operations: OperationAssignment[] = [];
+    OPERATING_ROOMS.forEach(room => {
+      Object.values(schedule[room] || {}).forEach(operation => {
+        if (operation) {
+          operations.push(operation);
+        }
+      });
+    });
+    return operations.sort((a, b) => {
+      if (a.scheduledTime !== b.scheduledTime) {
+        return a.scheduledTime.localeCompare(b.scheduledTime);
+      }
+      return a.room.localeCompare(b.room);
+    });
+  }, [schedule]);
+
+  // Save to localStorage
+  const saveToLocalStorage = useCallback(() => {
+    if (!isClient) return;
+    
+    try {
+      localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(schedule));
+      localStorage.setItem(STORAGE_KEYS.WORKFLOW_STATE, JSON.stringify({
+        currentStep: currentWorkflowStepKey,
+        previousStep: previousWorkflowStepKey
+      }));
+      localStorage.setItem(STORAGE_KEYS.JULIA_OVERRIDES, JSON.stringify(juliaOverrides));
+      localStorage.setItem(STORAGE_KEYS.DATA_SOURCE_INFO, JSON.stringify(dataSourceInfo));
+    } catch (error) {
+      console.warn('Failed to save to localStorage:', error);
+    }
+  }, [isClient, schedule, currentWorkflowStepKey, previousWorkflowStepKey, juliaOverrides, dataSourceInfo]);
+
+  // Auto-save effect
+  useEffect(() => {
+    if (!isClient) return;
+    
+    const timeoutId = setTimeout(() => {
+      saveToLocalStorage();
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [isClient, saveToLocalStorage]);
+
+  // Calculate derived values
+  const juliaReviewedCount = useMemo(() => 
+    allAssignmentsList.filter(op => 
+      op.status === 'approved_julia' || op.status === 'modified_julia'
+    ).length, 
+  [allAssignmentsList]);
+
+  const getWorkflowSteps = (): WorkflowStep[] => {
+    return ALL_WORKFLOW_STEPS.map(step => {
+      let status: 'completed' | 'active' | 'pending' = 'pending';
+      const currentStepInfo = ALL_WORKFLOW_STEPS.find(s => s.key === currentWorkflowStepKey);
+      const stepInfo = ALL_WORKFLOW_STEPS.find(s => s.key === step.key);
+
+      if (currentStepInfo && stepInfo) {
+        if (stepInfo.order < currentStepInfo.order) {
+          status = 'completed';
+        } else if (stepInfo.order === currentStepInfo.order) {
+          status = 'active';
+        }
+      }
+      return { ...step, label: step.label, status };
+    });
+  };
+
+  // Action handlers
+  const handleApprove = useCallback((operationId: string) => {
+    setSchedule(prev => {
+      const newSchedule = { ...prev };
+      OPERATING_ROOMS.forEach(room => {
+        Object.keys(newSchedule[room]).forEach(timeSlot => {
+          if (newSchedule[room][timeSlot]?.id === operationId) {
+            newSchedule[room][timeSlot] = {
+              ...newSchedule[room][timeSlot],
+              status: 'approved_julia'
+            };
+          }
+        });
+      });
+      return newSchedule;
+    });
+    
+    toast({
+      title: "Operation genehmigt",
+      description: "Die Operation wurde von Julia genehmigt.",
+    });
+  }, [toast]);
+
+  const handleModify = useCallback((operationId: string, newStaffIds: string[], reason: string) => {
+    // Get staff members from IDs
+    const newStaff = newStaffIds
+      .filter(id => id !== "unassign")
+      .map(id => INITIAL_STAFF_MEMBERS.find(s => s.id === id))
+      .filter(Boolean) as StaffMember[];
+
+    setSchedule(prev => {
+      const newSchedule = { ...prev };
+      OPERATING_ROOMS.forEach(room => {
+        Object.keys(newSchedule[room]).forEach(timeSlot => {
+          if (newSchedule[room][timeSlot]?.id === operationId) {
+            newSchedule[room][timeSlot] = {
+              ...newSchedule[room][timeSlot],
+              assignedStaff: newStaff,
+              status: 'modified_julia',
+              juliaModificationReason: reason
+            };
+          }
+        });
+      });
+      return newSchedule;
+    });
+
+    // FIXED: Use correct JuliaOverride structure
+    const override: JuliaOverride = {
+      operationId,
+      originalSuggestion: ["Previous staff"],
+      juliaSelection: newStaff.map(s => s.name),
+      reason
+    };
+    
+    setJuliaOverrides(prev => [...prev, override]);
+    
+    toast({
+      title: "Operation geändert",
+      description: "Die Operation wurde von Julia modifiziert.",
+    });
+  }, [toast]);
+
+  const handleGptOptimize = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Simulate AI optimization
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // FIXED: Use valid WorkflowStepKey
+      setCurrentWorkflowStepKey('GPT_SUGGESTIONS_READY');
+      setAiRawLearningSummary("GPT-4 hat neue Optimierungsvorschläge generiert basierend auf aktuellen Daten und Julias Präferenzen.");
+      
+      toast({
+        title: "KI-Optimierung abgeschlossen",
+        description: "Neue Vorschläge wurden generiert.",
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "KI-Optimierung fehlgeschlagen.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  const handleFinalizePlan = useCallback(() => {
+    setCurrentWorkflowStepKey('PLAN_FINALIZED');
+    saveToLocalStorage();
+    
+    toast({
+      title: "Plan finalisiert",
+      description: "Der Operationsplan wurde erfolgreich finalisiert.",
+    });
+  }, [saveToLocalStorage, toast]);
+
+  // FIXED: Updated function signatures to match expected interface
+  const handleExtendStaff = useCallback(() => {
+    toast({
+      title: "Personal verlängert",
+      description: "Arbeitszeit wurde verlängert.",
+    });
+  }, [toast]);
+
+  const handleRescheduleStaff = useCallback(() => {
+    toast({
+      title: "Personal umgeplant",
+      description: "Personal wurde umgeplant.",
+    });
+  }, [toast]);
+
+  const importCSVData = useCallback((operations: OperationAssignment[]) => {
+    try {
+      const newSchedule = {} as TimeBasedORSchedule;
+      OPERATING_ROOMS.forEach(room => {
+        newSchedule[room] = {};
+      });
+
+      operations.forEach(operation => {
+        if (newSchedule[operation.room]) {
+          newSchedule[operation.room][operation.scheduledTime] = operation;
+        }
+      });
+
+      setSchedule(newSchedule);
+      setDataSourceInfo({
+        type: 'imported',
+        fileName: 'imported_data.csv',
+        importDate: new Date().toISOString(),
+        lastModified: new Date().toISOString()
+      });
+      setCurrentWorkflowStepKey('PLAN_CREATED');
+
+      toast({
+        title: "CSV importiert",
+        description: `${operations.length} Operationen erfolgreich importiert.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Import-Fehler",
+        description: "Fehler beim Importieren der CSV-Daten.",
+        variant: "destructive"
+      });
+    }
+  }, [toast]);
+
+  return {
+    // Core state
     schedule,
-    workflowSteps,
+    staff,
+    workflowSteps: getWorkflowSteps(),
     currentWorkflowStepKey,
     aiRawLearningSummary,
     structuredLearningPoints,
     isLoading,
     selectedOperation,
     setSelectedOperation,
+    
+    // Action handlers
     handleApprove,
     handleModify,
     handleGptOptimize,
     handleFinalizePlan,
-    juliaProgress,
-    criticalAlertsCount,
-    juliaModificationsCount,
+    
+    // Statistics
+    juliaProgress: { reviewed: juliaReviewedCount, total: TOTAL_ASSIGNMENTS_FOR_JULIA },
+    criticalAlertsCount: allAssignmentsList.filter(op => 
+      op.status === 'critical_pending' || 
+      (op.assignedStaff.length < 2 && op.status !== 'empty' && op.status !== 'final_approved')
+    ).length,
+    juliaModificationsCount: juliaOverrides.length,
+    
+    // UI data
     criticalSituationData,
     optimizationSuggestionsData,
     handleExtendStaff,
     handleRescheduleStaff,
+    
+    // Data management
     importCSVData,
+    
+    // State management
     currentDate,
     setCurrentDate,
-  } = useORData();
-
-  const availableStaffForModal = STAFF_MEMBERS.filter(s => !s.isSick);
-
-  // Check if schedule has any operations
-  const hasOperations = Object.values(schedule).some(roomSchedule => 
-    Object.keys(roomSchedule).length > 0
-  );
-
-  // Handle CSV import
-  const handleCSVImport = useCallback((operations: OperationAssignment[], fileName?: string) => {
-    importCSVData(operations);
-    setDataMode('imported');
-    setShowImportPanel(false);
     
-    if (fileName) {
-      setImportedDataInfo({
-        fileName,
-        operationCount: operations.length,
-        importDate: new Date().toISOString().split('T')[0]
-      });
-    }
-  }, [importCSVData]);
-
-  // Switch to demo mode
-  const handleDemoMode = useCallback(() => {
-    setDataMode('demo');
-    setImportedDataInfo(null);
-    // You could load demo data here if needed
-  }, []);
-
-  // Close import panel
-  const handleCloseImport = useCallback(() => {
-    setShowImportPanel(false);
-  }, []);
-
-  if (isLoading && currentWorkflowStepKey === 'PLAN_CREATED') {
-    return (
-      <div className="flex flex-col min-h-screen">
-        <Header 
-          dataMode={dataMode}
-          importedDataInfo={importedDataInfo}
-          onShowImport={() => setShowImportPanel(true)}
-          currentDate={currentDate}
-        />
-        <main className="flex-grow container mx-auto p-4 space-y-6">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-96 w-full" />
-        </main>
-      </div>
-    );
-  }
-
-  // Show import panel if requested
-  if (showImportPanel) {
-    return (
-      <div className="flex flex-col min-h-screen bg-background">
-        <Header 
-          dataMode={dataMode}
-          importedDataInfo={importedDataInfo}
-          onShowImport={() => setShowImportPanel(true)}
-          currentDate={currentDate}
-        />
-        <main className="flex-grow container mx-auto px-2 py-4 sm:px-4 sm:py-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="outline"
-                onClick={handleCloseImport}
-                className="flex items-center space-x-2"
-              >
-                <X className="h-4 w-4" />
-                <span>Zurück zum Planer</span>
-              </Button>
-              {hasOperations && (
-                <Alert className="flex-1 max-w-md">
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>
-                    Importierte Daten ersetzen den aktuellen Plan vollständig.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-          </div>
-          
-          <CSVImportPanel 
-            onImport={(operations) => handleCSVImport(operations, 'Imported CSV')}
-            currentDate={currentDate}
-          />
-        </main>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col min-h-screen bg-background">
-      <Header 
-        dataMode={dataMode}
-        importedDataInfo={importedDataInfo}
-        onShowImport={() => setShowImportPanel(true)}
-        currentDate={currentDate}
-      />
-      <main className="flex-grow container mx-auto px-2 py-4 sm:px-4 sm:py-6 space-y-4 sm:space-y-6">
-        
-        {/* Data Mode Indicator and Controls */}
-        <Card className="bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
-          <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  {dataMode === 'demo' ? (
-                    <PlayCircle className="h-5 w-5 text-blue-500" />
-                  ) : (
-                    <Database className="h-5 w-5 text-green-500" />
-                  )}
-                  <span className="font-semibold">
-                    {dataMode === 'demo' ? 'Demo-Modus' : 'Echte Krankenhausdaten'}
-                  </span>
-                </div>
-                
-                {importedDataInfo && (
-                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <div className="flex items-center space-x-1">
-                      <FileText className="h-4 w-4" />
-                      <span>{importedDataInfo.fileName}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Users className="h-4 w-4" />
-                      <span>{importedDataInfo.operationCount} Operationen</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Calendar className="h-4 w-4" />
-                      <span>Importiert: {importedDataInfo.importDate}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex space-x-2">
-                {dataMode === 'imported' && (
-                  <Button
-                    variant="outline"
-                    onClick={handleDemoMode}
-                    size="sm"
-                  >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Demo-Modus
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={() => setShowImportPanel(true)}
-                  size="sm"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  CSV Importieren
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Empty State for Demo Mode */}
-        {dataMode === 'demo' && !hasOperations && (
-          <Card className="text-center py-12">
-            <CardContent>
-              <div className="space-y-4">
-                <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-                  <Upload className="h-8 w-8 text-primary" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold">Willkommen zum Nexus OR Planner</h3>
-                  <p className="text-muted-foreground mt-2">
-                    Importieren Sie CSV-Daten aus Ihrem Krankenhausinformationssystem 
-                    oder nutzen Sie den Demo-Modus zum Testen.
-                  </p>
-                </div>
-                <div className="flex justify-center space-x-4">
-                  <Button
-                    onClick={() => setShowImportPanel(true)}
-                    className="bg-primary hover:bg-primary/90"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    CSV-Daten importieren
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDemoMode}
-                  >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Demo-Modus starten
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Main Planning Interface - Only show if there are operations */}
-        {hasOperations && (
-          <>
-            <WorkflowStatusIndicator steps={workflowSteps} />
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-              {/* Left/Main column for Schedule and Stats */}
-              <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-                <DashboardStats 
-                  juliaProgress={juliaProgress}
-                  criticalAlertsCount={criticalAlertsCount}
-                  juliaModificationsCount={juliaModificationsCount}
-                />
-                <OperatingRoomScheduleTable 
-                  schedule={schedule} 
-                  onCellClick={(op) => setSelectedOperation(op)} 
-                />
-              </div>
-
-              {/* Right column for AI Assistant Panels */}
-              <div className="lg:col-span-1 space-y-6">
-                {/* GPT-4 Recommendations for Julia */}
-                <div>
-                  <h2 className="text-lg font-headline text-primary mb-3 flex items-center">
-                    <Info className="mr-2 h-5 w-5" /> GPT-4 Empfehlungen für Julia
-                  </h2>
-                  <JuliaRecommendationsPanel
-                    criticalSituation={criticalSituationData}
-                    optimizationSuggestions={optimizationSuggestionsData}
-                    onExtendStaff={handleExtendStaff}
-                    onRescheduleStaff={handleRescheduleStaff}
-                  />
-                </div>
-
-                {/* AI Learning Progress */}
-                <AiAssistantPanel 
-                  aiRawLearningSummary={aiRawLearningSummary}
-                  structuredLearningPoints={structuredLearningPoints}
-                  onOptimizeClick={handleGptOptimize}
-                  onFinalizePlanClick={handleFinalizePlan}
-                  currentWorkflowStepKey={currentWorkflowStepKey}
-                  isLoading={isLoading}
-                />
-              </div>
-            </div>
-          </>
-        )}
-      </main>
-
-      {/* Assignment Modal */}
-      <AssignmentModal
-        operation={selectedOperation}
-        isOpen={!!selectedOperation}
-        onClose={() => setSelectedOperation(null)}
-        onApprove={handleApprove}
-        onModify={handleModify}
-        availableStaff={availableStaffForModal}
-      />
-
-      <footer className="text-center p-4 text-sm text-muted-foreground border-t border-border">
-        © {new Date().getFullYear()} Klinikum Gütersloh - Nexus OR Planner. Alle Rechte vorbehalten.
-        {dataMode === 'imported' && (
-          <Badge variant="outline" className="ml-2">
-            Echte Daten
-          </Badge>
-        )}
-      </footer>
-    </div>
-  );
+    // Client state flag
+    isClient,
+  };
 }
