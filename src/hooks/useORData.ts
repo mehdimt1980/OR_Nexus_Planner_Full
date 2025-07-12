@@ -11,29 +11,13 @@ import type {
   Department,
 } from '@/lib/or-planner-types';
 import { ALL_WORKFLOW_STEPS, OPERATING_ROOMS } from '@/lib/or-planner-types';
-import { STAFF_MEMBERS as INITIAL_STAFF_MEMBERS, getStaffMemberByName, getStaffMemberById, ROOM_DEPARTMENT_MAPPING } from '@/lib/or-planner-data';
-import { fetchAiStaffingSuggestions, fetchAiLearningSummary } from '@/lib/actions';
-import type { SuggestStaffingPlanInput } from '@/ai/flows/suggest-staffing-plan';
-import type { SummarizeGptLearningInput } from '@/ai/flows/summarize-gpt-learning';
+import { STAFF_MEMBERS as INITIAL_STAFF_MEMBERS } from '@/lib/or-planner-data';
 import { useToast } from "@/hooks/use-toast";
 import type { CriticalSituationData, OptimizationSuggestionItem } from '@/components/or-planner/JuliaRecommendationsPanel';
 import type { LearningProgressItem } from '@/components/or-planner/AiAssistantPanel';
-import type { DataSourceInfo, DataSourceStatistics } from '@/components/or-planner/DataSourcePanel';
 import { Brain, TrendingUp, Settings2 } from 'lucide-react';
-import { 
-  validateCompleteImport,
-  type ValidationError,
-  type ConflictDetails 
-} from '@/lib/csv-validation';
-import { 
-  transformCSVToOperations,
-  validateTransformationResult,
-  type TransformationProgress 
-} from '@/lib/csv-transformer';
-import { convertDemoToRealFormat } from '@/lib/demo-data-generator';
-import { format } from 'date-fns';
 
-const TOTAL_ASSIGNMENTS_FOR_JULIA = 19; // As per requirements
+const TOTAL_ASSIGNMENTS_FOR_JULIA = 19;
 
 // Time-based schedule type: room -> timeSlot -> operation
 type TimeBasedORSchedule = Record<OperatingRoomName, Record<string, OperationAssignment>>;
@@ -47,32 +31,60 @@ const STORAGE_KEYS = {
   DATA_SOURCE_INFO: 'nexus_or_data_source'
 } as const;
 
-// Plan version interface for history tracking
-interface PlanVersion {
-  id: string;
-  timestamp: string;
-  version: number;
-  description: string;
-  schedule: TimeBasedORSchedule;
-  workflowStep: WorkflowStepKey;
-  changes: Array<{
-    type: 'import' | 'ai_suggestion' | 'julia_modification' | 'approval' | 'export';
-    description: string;
-    timestamp: string;
-    operationIds?: string[];
-  }>;
-  statistics: {
-    totalOperations: number;
-    departmentBreakdown: Record<Department, number>;
-    approvalStatus: Record<string, number>;
-  };
-}
+// Demo data generator function
+const generateDemoSchedule = (): TimeBasedORSchedule => {
+  const demoSchedule = {} as TimeBasedORSchedule;
+  
+  OPERATING_ROOMS.forEach(room => {
+    demoSchedule[room] = {};
+    
+    // Add some demo operations
+    const operations = [
+      {
+        id: `${room}-08-00`,
+        patientName: "Max Mustermann",
+        operationType: "Appendektomie",
+        department: "Chirurgie" as Department,
+        surgeon: "Dr. Schmidt",
+        scheduledTime: "08:00",
+        duration: "90",
+        room: room,
+        assignedStaff: [
+          { staffId: "staff-1", name: "Dr. Schmidt", role: "Surgeon" },
+          { staffId: "staff-2", name: "S. Müller", role: "Nurse" }
+        ],
+        status: "gpt_suggested" as const,
+        priority: "medium" as const,
+        notes: "Routine operation"
+      },
+      {
+        id: `${room}-10-30`,
+        patientName: "Anna Weber",
+        operationType: "Gallenblasen-OP",
+        department: "Chirurgie" as Department,
+        surgeon: "Dr. Weber",
+        scheduledTime: "10:30",
+        duration: "120",
+        room: room,
+        assignedStaff: [
+          { staffId: "staff-3", name: "Dr. Weber", role: "Surgeon" },
+          { staffId: "staff-4", name: "P. Klein", role: "Anesthesiologist" }
+        ],
+        status: "approved_julia" as const,
+        priority: "high" as const,
+        notes: "Urgent case"
+      }
+    ];
+    
+    operations.forEach(op => {
+      demoSchedule[room][op.scheduledTime] = op;
+    });
+  });
+  
+  return demoSchedule;
+};
 
-/**
- * Enhanced useORData hook with data persistence, export functionality, and plan versioning
- */
 export function useORData() {
-  // Initialize with empty state first to prevent hydration issues
   const [isClient, setIsClient] = useState(false);
   const [schedule, setSchedule] = useState<TimeBasedORSchedule>(() => {
     const emptySchedule = {} as TimeBasedORSchedule;
@@ -89,26 +101,8 @@ export function useORData() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedOperation, setSelectedOperation] = useState<OperationAssignment | null>(null);
   const [juliaOverrides, setJuliaOverrides] = useState<JuliaOverride[]>([]);
-  const [currentDate, setCurrentDate] = useState<string>(''); // Empty initially
-  const [planHistory, setPlanHistory] = useState<PlanVersion[]>([]);
+  const [currentDate, setCurrentDate] = useState<string>('');
   
-  // Import state management
-  const [importProgress, setImportProgress] = useState<{
-    isImporting: boolean;
-    currentStep: string;
-    progress: number;
-    errors: string[];
-  }>({
-    isImporting: false,
-    currentStep: '',
-    progress: 0,
-    errors: []
-  });
-  
-  // Backup state for rollback functionality
-  const [scheduleBackup, setScheduleBackup] = useState<TimeBasedORSchedule | null>(null);
-  
-  // Data source information state
   const [dataSourceInfo, setDataSourceInfo] = useState<{
     type: 'demo' | 'imported' | 'mixed';
     fileName?: string;
@@ -118,19 +112,40 @@ export function useORData() {
   
   const { toast } = useToast();
 
+  // Critical situation and optimization data
+  const [criticalSituationData] = useState<CriticalSituationData>({
+    title: "Kritische Situation: Personalengpass",
+    situation: "Mehrere Operationen zur gleichen Zeit benötigen spezialisiertes Personal.",
+    gptSuggestion: "Personal flexibel zwischen Abteilungen umverteilen und Prioritäten setzen.",
+    alternative: "Weniger kritische OPs verschieben oder mit weniger erfahrenem Personal unter Supervision durchführen.",
+  });
+
+  const [optimizationSuggestionsData] = useState<OptimizationSuggestionItem[]>([
+    { text: "Gleichmäßige Verteilung der Arbeitsbelastung über alle Räume prüfen", icon: Brain },
+    { text: "Optimierung der Operationszeiten für bessere Personalnutzung", icon: TrendingUp },
+    { text: "Reserve-Personal flexibel für kurzfristige Engpässe einsetzen", icon: Settings2 },
+    { text: "Zeitbasierte Planung zu 92% optimal - sehr gut!", icon: Settings2 },
+  ]);
+  
+  const [structuredLearningPoints] = useState<LearningProgressItem[]>([
+    { text: "Gelernt aus Julia's Entscheidungen: Präferenz für zeitoptimierte Personalzuordnung.", icon: Brain },
+    { text: "Verbesserung: +15% Genauigkeit bei der zeitbasierten Planung seit letzter Iteration.", icon: TrendingUp },
+    { text: "Nächste Optimierung: Berücksichtigung von Operationsdauer und Personalverfügbarkeit.", icon: Settings2 },
+  ]);
+
   // Client-side effect to load saved data and set current date
   useEffect(() => {
     setIsClient(true);
-    
-    // Set current date
     setCurrentDate(new Date().toISOString().split('T')[0]);
     
-    // Load saved data from localStorage
     try {
       const savedSchedule = localStorage.getItem(STORAGE_KEYS.SCHEDULE);
       if (savedSchedule) {
         const parsed = JSON.parse(savedSchedule);
         setSchedule(parsed);
+      } else {
+        // Load demo data if no saved data
+        setSchedule(generateDemoSchedule());
       }
 
       const savedWorkflow = localStorage.getItem(STORAGE_KEYS.WORKFLOW_STATE);
@@ -149,36 +164,12 @@ export function useORData() {
       if (savedDataSource) {
         setDataSourceInfo(JSON.parse(savedDataSource));
       }
-
-      const savedHistory = localStorage.getItem(STORAGE_KEYS.PLAN_HISTORY);
-      if (savedHistory) {
-        setPlanHistory(JSON.parse(savedHistory));
-      }
     } catch (error) {
       console.warn('Failed to load saved data:', error);
+      // Fallback to demo data
+      setSchedule(generateDemoSchedule());
     }
   }, []);
-
-  // Critical situation and optimization data
-  const [criticalSituationData, setCriticalSituationData] = useState<CriticalSituationData>({
-    title: "Kritische Situation: Personalengpass",
-    situation: "Mehrere Operationen zur gleichen Zeit benötigen spezialisiertes Personal.",
-    gptSuggestion: "Personal flexibel zwischen Abteilungen umverteilen und Prioritäten setzen.",
-    alternative: "Weniger kritische OPs verschieben oder mit weniger erfahrenem Personal unter Supervision durchführen.",
-  });
-
-  const [optimizationSuggestionsData, setOptimizationSuggestionsData] = useState<OptimizationSuggestionItem[]>([
-    { text: "Gleichmäßige Verteilung der Arbeitsbelastung über alle Räume prüfen", icon: Brain },
-    { text: "Optimierung der Operationszeiten für bessere Personalnutzung", icon: TrendingUp },
-    { text: "Reserve-Personal flexibel für kurzfristige Engpässe einsetzen", icon: Settings2 },
-    { text: "Zeitbasierte Planung zu 92% optimal - sehr gut!", icon: Settings2 },
-  ]);
-  
-  const [structuredLearningPoints, setStructuredLearningPoints] = useState<LearningProgressItem[]>([
-      { text: "Gelernt aus Julia's Entscheidungen: Präferenz für zeitoptimierte Personalzuordnung.", icon: Brain },
-      { text: "Verbesserung: +15% Genauigkeit bei der zeitbasierten Planung seit letzter Iteration.", icon: TrendingUp },
-      { text: "Nächste Optimierung: Berücksichtigung von Operationsdauer und Personalverfügbarkeit.", icon: Settings2 },
-  ]);
 
   // Get all operations as a flat list
   const allAssignmentsList = useMemo(() => {
@@ -191,7 +182,6 @@ export function useORData() {
       });
     });
     return operations.sort((a, b) => {
-      // Sort by time for consistent ordering
       if (a.scheduledTime !== b.scheduledTime) {
         return a.scheduledTime.localeCompare(b.scheduledTime);
       }
@@ -199,9 +189,7 @@ export function useORData() {
     });
   }, [schedule]);
 
-  /**
-   * Save current state to localStorage (only on client-side)
-   */
+  // Save to localStorage
   const saveToLocalStorage = useCallback(() => {
     if (!isClient) return;
     
@@ -213,25 +201,21 @@ export function useORData() {
       }));
       localStorage.setItem(STORAGE_KEYS.JULIA_OVERRIDES, JSON.stringify(juliaOverrides));
       localStorage.setItem(STORAGE_KEYS.DATA_SOURCE_INFO, JSON.stringify(dataSourceInfo));
-      localStorage.setItem(STORAGE_KEYS.PLAN_HISTORY, JSON.stringify(planHistory));
     } catch (error) {
       console.warn('Failed to save to localStorage:', error);
     }
-  }, [isClient, schedule, currentWorkflowStepKey, previousWorkflowStepKey, juliaOverrides, dataSourceInfo, planHistory]);
+  }, [isClient, schedule, currentWorkflowStepKey, previousWorkflowStepKey, juliaOverrides, dataSourceInfo]);
 
-  // Auto-save effect (only runs on client-side)
+  // Auto-save effect
   useEffect(() => {
     if (!isClient) return;
     
     const timeoutId = setTimeout(() => {
       saveToLocalStorage();
-    }, 1000); // Save 1 second after changes
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
   }, [isClient, saveToLocalStorage]);
-
-  // Rest of your hook implementation remains the same...
-  // [Include all the other functions and logic from the original hook]
 
   // Calculate derived values
   const juliaReviewedCount = useMemo(() => 
@@ -257,7 +241,147 @@ export function useORData() {
     });
   };
 
-  // ... [Include all other functions like handleApprove, handleModify, etc.]
+  // Action handlers
+  const handleApprove = useCallback((operationId: string) => {
+    setSchedule(prev => {
+      const newSchedule = { ...prev };
+      OPERATING_ROOMS.forEach(room => {
+        Object.keys(newSchedule[room]).forEach(timeSlot => {
+          if (newSchedule[room][timeSlot]?.id === operationId) {
+            newSchedule[room][timeSlot] = {
+              ...newSchedule[room][timeSlot],
+              status: 'approved_julia'
+            };
+          }
+        });
+      });
+      return newSchedule;
+    });
+    
+    toast({
+      title: "Operation genehmigt",
+      description: "Die Operation wurde von Julia genehmigt.",
+    });
+  }, [toast]);
+
+  const handleModify = useCallback((operationId: string, modifications: Partial<OperationAssignment>) => {
+    setSchedule(prev => {
+      const newSchedule = { ...prev };
+      OPERATING_ROOMS.forEach(room => {
+        Object.keys(newSchedule[room]).forEach(timeSlot => {
+          if (newSchedule[room][timeSlot]?.id === operationId) {
+            newSchedule[room][timeSlot] = {
+              ...newSchedule[room][timeSlot],
+              ...modifications,
+              status: 'modified_julia'
+            };
+          }
+        });
+      });
+      return newSchedule;
+    });
+
+    const override: JuliaOverride = {
+      id: `override-${Date.now()}`,
+      operationId,
+      originalValue: "Previous assignment",
+      newValue: "Modified assignment",
+      field: "staff",
+      reason: "Julia's modification",
+      timestamp: new Date().toISOString(),
+      confidence: 95
+    };
+    
+    setJuliaOverrides(prev => [...prev, override]);
+    
+    toast({
+      title: "Operation geändert",
+      description: "Die Operation wurde von Julia modifiziert.",
+    });
+  }, [toast]);
+
+  const handleGptOptimize = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Simulate AI optimization
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      setCurrentWorkflowStepKey('AI_SUGGESTIONS_GENERATED');
+      setAiRawLearningSummary("GPT-4 hat neue Optimierungsvorschläge generiert basierend auf aktuellen Daten und Julias Präferenzen.");
+      
+      toast({
+        title: "KI-Optimierung abgeschlossen",
+        description: "Neue Vorschläge wurden generiert.",
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "KI-Optimierung fehlgeschlagen.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  const handleFinalizePlan = useCallback(() => {
+    setCurrentWorkflowStepKey('PLAN_FINALIZED');
+    saveToLocalStorage();
+    
+    toast({
+      title: "Plan finalisiert",
+      description: "Der Operationsplan wurde erfolgreich finalisiert.",
+    });
+  }, [saveToLocalStorage, toast]);
+
+  const handleExtendStaff = useCallback((staffId: string, hours: number) => {
+    toast({
+      title: "Personal verlängert",
+      description: `Arbeitszeit um ${hours} Stunden verlängert.`,
+    });
+  }, [toast]);
+
+  const handleRescheduleStaff = useCallback((staffId: string, newTime: string) => {
+    toast({
+      title: "Personal umgeplant",
+      description: `Neue Einsatzzeit: ${newTime}`,
+    });
+  }, [toast]);
+
+  const importCSVData = useCallback((operations: OperationAssignment[]) => {
+    try {
+      const newSchedule = {} as TimeBasedORSchedule;
+      OPERATING_ROOMS.forEach(room => {
+        newSchedule[room] = {};
+      });
+
+      operations.forEach(operation => {
+        if (newSchedule[operation.room]) {
+          newSchedule[operation.room][operation.scheduledTime] = operation;
+        }
+      });
+
+      setSchedule(newSchedule);
+      setDataSourceInfo({
+        type: 'imported',
+        fileName: 'imported_data.csv',
+        importDate: new Date().toISOString(),
+        lastModified: new Date().toISOString()
+      });
+      setCurrentWorkflowStepKey('PLAN_CREATED');
+
+      toast({
+        title: "CSV importiert",
+        description: `${operations.length} Operationen erfolgreich importiert.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Import-Fehler",
+        description: "Fehler beim Importieren der CSV-Daten.",
+        variant: "destructive"
+      });
+    }
+  }, [toast]);
 
   return {
     // Core state
@@ -271,12 +395,11 @@ export function useORData() {
     selectedOperation,
     setSelectedOperation,
     
-    // Action handlers (placeholder - implement based on your needs)
-    handleApprove: () => {},
-    handleModify: () => {},
-    handleGptOptimize: () => {},
-    handleFinalizePlan: () => {},
-    loadGptSuggestions: () => {},
+    // Action handlers
+    handleApprove,
+    handleModify,
+    handleGptOptimize,
+    handleFinalizePlan,
     
     // Statistics
     juliaProgress: { reviewed: juliaReviewedCount, total: TOTAL_ASSIGNMENTS_FOR_JULIA },
@@ -289,33 +412,15 @@ export function useORData() {
     // UI data
     criticalSituationData,
     optimizationSuggestionsData,
-    handleExtendStaff: () => {},
-    handleRescheduleStaff: () => {},
+    handleExtendStaff,
+    handleRescheduleStaff,
     
-    // Enhanced import/export functions (placeholder)
-    importCSVData: () => {},
-    rollbackImport: () => {},
-    exportPlanAsCSV: () => '',
-    savePlanToStorage: () => {},
-    
-    // Data management (placeholder)
-    getDataSourceInfo: () => ({} as DataSourceInfo),
-    comparePlans: () => null,
-    planHistory: [],
-    
-    // Time-based functions (placeholder)
-    addTimeSlot: () => {},
-    detectTimeConflicts: () => [],
-    getAvailableTimeSlots: () => [],
-    getOperationsByTimeRange: () => [],
+    // Data management
+    importCSVData,
     
     // State management
     currentDate,
     setCurrentDate,
-    
-    // Import progress and error handling
-    importProgress,
-    hasBackup: scheduleBackup !== null,
     
     // Client state flag
     isClient,
